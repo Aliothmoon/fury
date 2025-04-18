@@ -53,6 +53,8 @@ cdef extern from "fury/util/buffer.h" namespace "fury" nogil:
 
         inline void UnsafePutByte(uint32_t offset, c_bool)
 
+        inline void UnsafePutByte(uint32_t offset, uint8_t)
+
         inline void UnsafePutByte(uint32_t offset, int8_t)
 
         inline void UnsafePut(uint32_t offset, int16_t)
@@ -107,3 +109,7 @@ cdef extern from "fury/util/bit_util.h" namespace "fury::util" nogil:
     void SetBitTo(uint8_t *bits, int64_t i, c_bool bit_is_set)
 
     c_string hex(uint8_t *data, int32_t length)
+
+
+cdef extern from "fury/util/string_util.h" namespace "fury" nogil:
+    c_bool utf16HasSurrogatePairs(uint16_t* data, size_t size)

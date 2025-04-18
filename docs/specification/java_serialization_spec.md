@@ -2,6 +2,21 @@
 title: Fury Java Serialization Format
 sidebar_position: 1
 id: fury_java_serialization_spec
+license: |
+  Licensed to the Apache Software Foundation (ASF) under one or more
+  contributor license agreements.  See the NOTICE file distributed with
+  this work for additional information regarding copyright ownership.
+  The ASF licenses this file to You under the Apache License, Version 2.0
+  (the "License"); you may not use this file except in compliance with
+  the License.  You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
 ---
 
 ## Spec overview
@@ -433,7 +448,7 @@ Fury will serialize map chunk by chunk, every chunk has 127 pairs at most.
 ```
 |    1 byte      |     1 byte     | variable bytes  |
 +----------------+----------------+-----------------+
-| chunk size: N  |    KV header   |   N*2 objects   |
+|    KV header   | chunk size: N  |   N*2 objects   |
 ```
 
 KV header:
@@ -441,13 +456,13 @@ KV header:
 - If track key ref, use the first bit `0b1` of the header to flag it.
 - If the key has null, use the second bit `0b10` of the header to flag it. If ref tracking is enabled for this
   key type, this flag is invalid.
-- If the key types of map are different, use the 3rd bit `0b100` of the header to flag it.
-- If the actual key type of map is not the declared key type, use the 4rd bit `0b1000` of the header to flag it.
-- If track value ref, use the 5th bit `0b10000` of the header to flag it.
-- If the value has null, use the 6th bit `0b100000` of the header to flag it. If ref tracking is enabled for this
+- If the actual key type of map is not the declared key type, use the 3rd bit `0b100` of the header to flag it.
+- If track value ref, use the 4th bit `0b1000` of the header to flag it.
+- If the value has null, use the 5th bit `0b10000` of the header to flag it. If ref tracking is enabled for this
   value type, this flag is invalid.
-- If the value types of map are different, use the 7rd bit `0b1000000` header to flag it.
-- If the value type of map is not the declared value type, use the 8rd bit `0b10000000` of the header to flag it.
+- If the value type of map is not the declared value type, use the 6rd bit `0b100000` of the header to flag it.
+- If key or value is null, that key and value will be written as a separate chunk, and chunk size writing will be
+  skipped too.
 
 If streaming write is enabled, which means Fury can't update written `chunk size`. In such cases, map key-value data
 format will be:

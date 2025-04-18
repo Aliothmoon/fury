@@ -105,7 +105,15 @@ class ClassDefEncoder {
   /** Build class definition from fields of class. */
   static ClassDef buildClassDef(
       ClassResolver classResolver, Class<?> type, List<Field> fields, boolean isObjectType) {
-    List<FieldInfo> fieldInfos = buildFieldsInfo(classResolver, fields);
+    return buildClassDefWithFieldInfos(
+        classResolver, type, buildFieldsInfo(classResolver, fields), isObjectType);
+  }
+
+  static ClassDef buildClassDefWithFieldInfos(
+      ClassResolver classResolver,
+      Class<?> type,
+      List<ClassDef.FieldInfo> fieldInfos,
+      boolean isObjectType) {
     Map<String, List<FieldInfo>> classLayers = getClassFields(type, fieldInfos);
     fieldInfos = new ArrayList<>(fieldInfos.size());
     classLayers.values().forEach(fieldInfos::addAll);
@@ -133,16 +141,25 @@ class ClassDefEncoder {
       // | num fields + register flag | header + package name | header + class name
       // | header + type id + field name | next field info | ... |
       int currentClassHeader = (fields.size() << 1);
-      if (classResolver.isRegistered(type)) {
+      if (classResolver.isRegisteredById(type)) {
         currentClassHeader |= 1;
         classDefBuf.writeVarUint32Small7(currentClassHeader);
         classDefBuf.writeVarUint32Small7(classResolver.getRegisteredClassId(type));
       } else {
         classDefBuf.writeVarUint32Small7(currentClassHeader);
         Class<?> currentType = getType(type, className);
-        Tuple2<String, String> encoded = Encoders.encodePkgAndClass(currentType);
-        writePkgName(classDefBuf, encoded.f0);
-        writeTypeName(classDefBuf, encoded.f1);
+        String ns, typename;
+        if (classResolver.isRegisteredByName(type)) {
+          Tuple2<String, String> nameTuple = classResolver.getRegisteredNameTuple(type);
+          ns = nameTuple.f0;
+          typename = nameTuple.f1;
+        } else {
+          Tuple2<String, String> encoded = Encoders.encodePkgAndClass(currentType);
+          ns = encoded.f0;
+          typename = encoded.f1;
+        }
+        writePkgName(classDefBuf, ns);
+        writeTypeName(classDefBuf, typename);
       }
       writeFieldsInfo(classDefBuf, fields);
     }
@@ -242,6 +259,7 @@ class ClassDefEncoder {
       // `3 bits size + 2 bits field name encoding + polymorphism flag + nullability flag + ref
       // tracking flag`
       int header = ((fieldType.isMonomorphic() ? 1 : 0) << 2);
+      header |= ((fieldType.trackingRef() ? 1 : 0));
       // Encoding `UTF8/ALL_TO_LOWER_SPECIAL/LOWER_UPPER_DIGIT_SPECIAL/TAG_ID`
       MetaString metaString = Encoders.encodeFieldName(fieldInfo.getFieldName());
       int encodingFlags = fieldNameEncodingsList.indexOf(metaString.getEncoding());

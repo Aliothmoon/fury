@@ -21,9 +21,9 @@ package org.apache.fury.serializer;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
+import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -83,7 +83,12 @@ public class StructSerializer<T> extends Serializer<T> {
     this.constructor = ctr;
     fieldAccessors =
         Descriptor.getFields(cls).stream()
-            .sorted(Comparator.comparing(f -> StringUtils.lowerCamelToLowerUnderscore(f.getName())))
+            .map(
+                f ->
+                    new AbstractMap.SimpleEntry<>(
+                        f, StringUtils.lowerCamelToLowerUnderscore(f.getName())))
+            .sorted(Map.Entry.comparingByValue())
+            .map(Map.Entry::getKey)
             .map(FieldAccessor::createAccessor)
             .toArray(FieldAccessor[]::new);
     fieldGenerics = buildFieldGenerics(fury, TypeRef.of(cls), fieldAccessors);
@@ -101,6 +106,12 @@ public class StructSerializer<T> extends Serializer<T> {
   private static <T> GenericType getGenericType(
       Fury fury, TypeRef<T> type, FieldAccessor fieldAccessor) {
     GenericType t = GenericType.build(type, fieldAccessor.getField().getGenericType());
+    if (t.getTypeParametersCount() > 0) {
+      boolean skip = Arrays.stream(t.getTypeParameters()).allMatch(p -> p.getCls() == Object.class);
+      if (skip) {
+        t = new GenericType(t.getTypeRef(), t.isMonomorphic());
+      }
+    }
     ClassResolver resolver = fury.getClassResolver();
     Class cls = t.getCls();
     if (resolver.isMonomorphic(cls)) {

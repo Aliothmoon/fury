@@ -2,6 +2,21 @@
 title: Fury Xlang Serialization Format
 sidebar_position: 0
 id: fury_xlang_serialization_spec
+license: |
+  Licensed to the Apache Software Foundation (ASF) under one or more
+  contributor license agreements.  See the NOTICE file distributed with
+  this work for additional information regarding copyright ownership.
+  The ASF licenses this file to You under the Apache License, Version 2.0
+  (the "License"); you may not use this file except in compliance with
+  the License.  You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
 ---
 
 ## Cross-language Serialization Specification
@@ -42,18 +57,11 @@ also introduce more complexities compared to static serialization frameworks. So
 - named_enum: an enum whose value will be serialized as the registered name.
 - struct: a morphic(final) type serialized by Fury Struct serializer. i.e. it doesn't have subclasses. Suppose we're
   deserializing `List<SomeClass>`, we can save dynamic serializer dispatch since `SomeClass` is morphic(final).
-- polymorphic_struct: a type which is not morphic(not final). i.e. it has subclasses. Suppose we're deserializing
-  `List<SomeClass>`, we must dispatch serializer dynamically since `SomeClass` is morphic(final).
 - compatible_struct: a morphic(final) type serialized by Fury compatible Struct serializer.
-- polymorphic_compatible_struct: a non-morphic(non-final) type serialized by Fury compatible Struct serializer.
 - named_struct: a `struct` whose type mapping will be encoded as a name.
-- named_polymorphic_struct: a `polymorphic_struct` whose type mapping will be encoded as a name.
 - named_compatible_struct: a `compatible_struct` whose type mapping will be encoded as a name.
-- named_polymorphic_compatible_struct: a `polymorphic_compatible_struct` whose type mapping will be encoded as a name.
 - ext: a type which will be serialized by a customized serializer.
-- polymorphic_ext: an `ext` type which is not morphic(not final).
 - named_ext: an `ext` type whose type mapping will be encoded as a name.
-- named_polymorphic_ext: an `polymorphic_ext` type whose type mapping will be encoded as a name.
 - list: a sequence of objects.
 - set: an unordered set of unique elements.
 - map: a map of key-value pairs. Mutable types such as `list/map/set/array/tensor/arrow` are not allowed as key of map.
@@ -118,14 +126,13 @@ Users can also provide meta hints for fields of a type, or the type whole. Here 
 annotation to provide such information.
 
 ```java
-
-@TypeInfo(fieldsNullable = false, trackingRef = false, polymorphic = false)
+@FuryObject(fieldsNullable = false, trackingRef = false)
 class Foo {
-  @FieldInfo(trackingRef = false)
+  @FuryField(trackingRef = false)
   int[] intArray;
-  @FieldInfo(polymorphic = true)
+  @FuryField(polymorphic = true)
   Object object;
-  @FieldInfo(tagId = 1, nullable = true)
+  @FuryField(tagId = 1, nullable = true)
   List<Object> objectList;
 }
 ```
@@ -334,10 +341,15 @@ Meta header is a 64 bits number value encoded in little endian order.
   - field name: If tag id is set, tag id will be used instead. Otherwise meta string encoding `[length]` and data will
       be written instead.
   - type id:
+    - Format: `id << 1 | polymorphic flag`. If field type is polymorphic, this flag is set to `0b1`, otherwise it's
+      `0b0`
     - For registered type-consistent classes, it will be the registered type id.
-    - Otherwise it will be encoded as `OBJECT_ID` if it isn't `final` and `FINAL_OBJECT_ID` if it's `final`. The
-          meta for such types is written separately instead of inlining here is to reduce meta space cost if object of
-          this type is serialized in current object graph multiple times, and the field value may be null too.
+    - For struct type it will be written as `STRUCT`.
+    - The meta for struct type is written separately instead of inlining here is to reduce meta space cost if object of
+      this type is serialized in current object graph multiple times, and the field value may be null too.
+    - For enum type, it will be written as `ENUM`.
+    - For collection type, it will be written as `COLLECTION`, then write element type recursively.
+    - For map type, it will be written as `MAP`, then write key and value type recursively.
 
 Field order are left as implementation details, which is not exposed to specification, the deserialization need to
 resort fields based on Fury field comparator. In this way, fury can compute statistics for field names or types and
@@ -587,7 +599,7 @@ Fury will serialize the map chunk by chunk, every chunk has 255 pairs at most.
 ```
 |    1 byte      |     1 byte     | variable bytes  |
 +----------------+----------------+-----------------+
-| chunk size: N  |    KV header   |   N*2 objects   |
+|    KV header   | chunk size: N  |   N*2 objects   |
 ```
 
 KV header:
@@ -595,13 +607,13 @@ KV header:
 - If track key ref, use the first bit `0b1` of the header to flag it.
 - If the key has null, use the second bit `0b10` of the header to flag it. If ref tracking is enabled for this
   key type, this flag is invalid.
-- If the key types of map are different, use the 3rd bit `0b100` of the header to flag it.
-- If the actual key type of the map is not the declared key type, use the 4rd bit `0b1000` of the header to flag it.
-- If track value ref, use the 5th bit `0b10000` of the header to flag it.
-- If the value has null, use the 6th bit `0b100000` of the header to flag it. If ref tracking is enabled for this
+- If the actual key type of map is not the declared key type, use the 3rd bit `0b100` of the header to flag it.
+- If track value ref, use the 4th bit `0b1000` of the header to flag it.
+- If the value has null, use the 5th bit `0b10000` of the header to flag it. If ref tracking is enabled for this
   value type, this flag is invalid.
-- If the value types of the map are different, use the 7rd bit `0b1000000` header to flag it.
-- If the value type of map is not the declared value type, use the 8rd bit `0b10000000` of the header to flag it.
+- If the value type of map is not the declared value type, use the 6rd bit `0b100000` of the header to flag it.
+- If key or value is null, that key and value will be written as a separate chunk, and chunk size writing will be
+  skipped too.
 
 If streaming write is enabled, which means Fury can't update written `chunk size`. In such cases, map key-value data
 format will be:

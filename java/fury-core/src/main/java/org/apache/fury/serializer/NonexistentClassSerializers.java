@@ -70,12 +70,14 @@ public final class NonexistentClassSerializers {
     private final ClassDef classDef;
     private final ClassInfoHolder classInfoHolder;
     private final LongMap<ClassFieldsInfo> fieldsInfoMap;
+    private final SerializationBinding binding;
 
     public NonexistentClassSerializer(Fury fury, ClassDef classDef) {
       super(fury, NonexistentClass.NonexistentMetaShared.class);
       this.classDef = classDef;
       classInfoHolder = fury.getClassResolver().nilClassInfoHolder();
       fieldsInfoMap = new LongMap<>();
+      binding = SerializationBinding.createBinding(fury);
       Preconditions.checkArgument(fury.getConfig().isMetaShareEnabled());
     }
 
@@ -146,7 +148,7 @@ public final class NonexistentClassSerializers {
       for (ObjectSerializer.GenericTypeField fieldInfo : fieldsInfo.containerFields) {
         Object fieldValue = value.get(fieldInfo.qualifiedFieldName);
         ObjectSerializer.writeContainerFieldValue(
-            fury, refResolver, classResolver, generics, fieldInfo, buffer, fieldValue);
+            binding, refResolver, classResolver, generics, fieldInfo, buffer, fieldValue);
       }
     }
 
@@ -204,20 +206,21 @@ public final class NonexistentClassSerializers {
             fieldValue = fieldInfo.classInfo.getSerializer().read(buffer);
           } else {
             fieldValue =
-                ObjectSerializer.readFinalObjectFieldValue(
-                    fury, refResolver, classResolver, fieldInfo, isFinal[i], buffer);
+                AbstractObjectSerializer.readFinalObjectFieldValue(
+                    binding, refResolver, classResolver, fieldInfo, isFinal[i], buffer);
           }
         }
         entries.add(new MapEntry(fieldInfo.qualifiedFieldName, fieldValue));
       }
       for (ObjectSerializer.GenericTypeField fieldInfo : fieldsInfo.otherFields) {
-        Object fieldValue = ObjectSerializer.readOtherFieldValue(fury, fieldInfo, buffer);
+        Object fieldValue =
+            AbstractObjectSerializer.readOtherFieldValue(binding, fieldInfo, buffer);
         entries.add(new MapEntry(fieldInfo.qualifiedFieldName, fieldValue));
       }
       Generics generics = fury.getGenerics();
       for (ObjectSerializer.GenericTypeField fieldInfo : fieldsInfo.containerFields) {
         Object fieldValue =
-            ObjectSerializer.readContainerFieldValue(fury, generics, fieldInfo, buffer);
+            AbstractObjectSerializer.readContainerFieldValue(binding, generics, fieldInfo, buffer);
         entries.add(new MapEntry(fieldInfo.qualifiedFieldName, fieldValue));
       }
       obj.setEntries(entries);

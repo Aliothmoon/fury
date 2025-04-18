@@ -35,13 +35,13 @@ install_python() {
 install_pyfury() {
   echo "Python version $(python -V), path $(which python)"
   "$ROOT"/ci/deploy.sh install_pyarrow
-  pip install Cython wheel "numpy<2.0.0" pytest
+  pip install Cython wheel pytest
   pushd "$ROOT/python"
   pip list
-  export PATH=~/bin:$PATH
   echo "Install pyfury"
   # Fix strange installed deps not found
-  pip install setuptools
+  pip install setuptools -U
+  bazel build //:cp_fury_so
   pip install -v -e .
   popd
 }
@@ -76,6 +76,12 @@ install_bazel() {
     echo "build --jobs="$JOBS >> ~/.bazelrc
     grep "jobs" ~/.bazelrc
   fi
+}
+
+install_bazel_windows() {
+  choco install bazel --version=6.3.2 --force
+  VERSION=`bazel version`
+  echo "bazel version: $VERSION"
 }
 
 JDKS=(
@@ -156,6 +162,19 @@ jdk17_plus_tests() {
   echo "Executing latest_jdk_tests succeeds"
 }
 
+windows_java21_test() {
+  java -version
+  echo "Executing fury java tests"
+  cd "$ROOT/java"
+  set +e
+  mvn -T10 --batch-mode --no-transfer-progress test -Dtest=!org.apache.fury.CrossLanguageTest install -pl '!fury-format,!fury-testsuite'
+  testcode=$?
+  if [[ $testcode -ne 0 ]]; then
+    exit $testcode
+  fi
+  echo "Executing fury java tests succeeds"
+}
+
 case $1 in
     java8)
       echo "Executing fury java tests"
@@ -185,6 +204,9 @@ case $1 in
     ;;
     java21)
       jdk17_plus_tests
+    ;;
+    windows_java21)
+      windows_java21_test
     ;;
     integration_tests)
       echo "Install jdk"
@@ -248,6 +270,12 @@ case $1 in
       cd "$ROOT/python"
       echo "Executing fury python tests"
       pytest -v -s --durations=60 pyfury/tests
+      testcode=$?
+      if [[ $testcode -ne 0 ]]; then
+        exit $testcode
+      fi
+      echo "Executing fury python tests succeeds"
+      ENABLE_FURY_CYTHON_SERIALIZATION=0 pytest -v -s --durations=60 pyfury/tests
       testcode=$?
       if [[ $testcode -ne 0 ]]; then
         exit $testcode

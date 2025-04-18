@@ -22,27 +22,33 @@
 
 cimport cython
 from cpython cimport *
+from cpython.unicode cimport *
 from libcpp.memory cimport shared_ptr, make_shared
 from libc.stdint cimport *
 from libcpp cimport bool as c_bool
 from pyfury.includes.libutil cimport(
-    CBuffer, AllocateBuffer, GetBit, SetBit, ClearBit, SetBitTo, CStatus, StatusCode
+    CBuffer, AllocateBuffer, GetBit, SetBit, ClearBit, SetBitTo, CStatus, StatusCode, utf16HasSurrogatePairs
 )
+import os
 
 cdef int32_t max_buffer_size = 2 ** 31 - 1
+cdef int UTF16_LE = -1
+
+cdef c_bool _WINDOWS = os.name == 'nt'
 
 
 @cython.final
 cdef class Buffer:
-    def __init__(self,  data not None, int offset=0, length=None):
+    def __init__(self,  data not None, int32_t offset=0, length=None):
         self.data = data
-        assert 0 <= offset <= len(data), f'offset {offset} length {len(data)}'
+        cdef int32_t buffer_len = len(data)
         cdef int length_
         if length is None:
-            length_ = len(data) - offset
+            length_ = buffer_len - offset
         else:
             length_ = length
-        assert length_ >= 0, f'length should be >= 0 but got {length}'
+        if offset < 0 or offset + length_ > buffer_len:
+            raise ValueError(f'Wrong offset {offset} or length {length} for buffer with size {buffer_len}')
         if length_ > 0:
             self._c_address = get_address(data) + offset
         else:
@@ -78,6 +84,10 @@ cdef class Buffer:
         self._c_size = self.c_buffer.get().size()
 
     cpdef inline put_bool(self, uint32_t offset, c_bool v):
+        self.check_bound(offset, <int32_t>1)
+        self.c_buffer.get().UnsafePutByte(offset, v)
+
+    cpdef inline put_uint8(self, uint32_t offset, uint8_t v):
         self.check_bound(offset, <int32_t>1)
         self.c_buffer.get().UnsafePutByte(offset, v)
 
@@ -149,7 +159,6 @@ cdef class Buffer:
 
     cpdef inline check_bound(self, int32_t offset, int32_t length):
         cdef int32_t size_ = self.c_buffer.get().size()
-        # if offset + length > size_:
         if offset | length | (offset + length) | (size_- (offset + length)) < 0:
             raise ValueError(f"Address range {offset, offset + length} "
                              f"out of bound {0, size_}")
@@ -299,6 +308,12 @@ cdef class Buffer:
         self.check_bound(offset, <int32_t>1)
         self.reader_index += <int32_t>1
         return (<c_bool *>(self._c_address + offset))[0]
+
+    cpdef inline uint8_t read_uint8(self):
+        cdef int32_t offset = self.reader_index
+        self.check_bound(offset, <int32_t>1)
+        self.reader_index += <int32_t>1
+        return (<uint8_t *>(self._c_address + offset))[0]
 
     cpdef inline int8_t read_int8(self):
         cdef int32_t offset = self.reader_index
@@ -543,15 +558,52 @@ cdef class Buffer:
         return length
 
     cpdef inline write_string(self, str value):
-        cdef Py_ssize_t length
-        cdef const char * buf = PyUnicode_AsUTF8AndSize(value, &length)
-        self.write_c_buffer(<const uint8_t *>buf, length)
+        cdef Py_ssize_t length = PyUnicode_GET_LENGTH(value)
+        cdef int32_t kind = PyUnicode_KIND(value)
+        # Note: buffer will be native endian for PyUnicode_2BYTE_KIND
+        cdef void* buffer = PyUnicode_DATA(value)
+        cdef uint64_t header = 0
+        cdef int32_t buffer_size
+        if kind == PyUnicode_1BYTE_KIND:
+            buffer_size = length
+            header = (length << 2) | 0
+        elif kind == PyUnicode_2BYTE_KIND:
+            buffer_size = length << 1
+            header = (length << 3) | 1
+        else:
+            buffer = <void *>(PyUnicode_AsUTF8AndSize(value, &length))
+            buffer_size = length
+            header = (buffer_size << 2) | 2
+        self.write_varuint64(header)
+        if buffer_size == 0:  # access an emtpy buffer may raise out-of-bound exception.
+            return
+        self.grow(buffer_size)
+        self.check_bound(self.writer_index, buffer_size)
+        self.c_buffer.get().CopyFrom(self.writer_index, <const uint8_t *>buffer, 0, buffer_size)
+        self.writer_index += buffer_size
 
     cpdef inline str read_string(self):
-        cdef uint8_t* buf
-        cdef int32_t length = self.read_c_buffer(&buf)
-        str_obj = PyUnicode_DecodeUTF8(<const char *>buf, length, "strict")
-        return str_obj
+        cdef uint64_t header = self.read_varuint64()
+        cdef uint32_t size = header >> 2
+        self.check_bound(self.reader_index, size)
+        cdef const char * buf = <const char *>(self.c_buffer.get().data() + self.reader_index)
+        self.reader_index += size
+        cdef uint32_t encoding = header & <uint32_t>0b11
+        if encoding == 0:
+            # PyUnicode_FromASCII
+            return PyUnicode_DecodeLatin1(buf, size, "strict")
+        elif encoding == 1:
+            if utf16HasSurrogatePairs(<const uint16_t *>buf, size >> 1):
+                return PyUnicode_DecodeUTF16(
+                    buf,
+                    size,  # len of string in bytes
+                    NULL,  # special error handling options, we don't need any
+                    &UTF16_LE,  # fury use little-endian
+                )
+            else:
+                return PyUnicode_FromKindAndData(PyUnicode_2BYTE_KIND, buf, size >> 1)
+        else:
+            return PyUnicode_DecodeUTF8(buf, size, "strict")
 
     def __len__(self):
         return self._c_size
@@ -621,6 +673,8 @@ cdef class Buffer:
 
 
 cdef inline uint8_t* get_address(v):
+    if type(v) is bytes:
+        return <uint8_t*>(PyBytes_AsString(v))
     view = memoryview(v)
     cdef str dtype = view.format
     cdef:
@@ -645,6 +699,13 @@ cdef inline uint8_t* get_address(v):
         signed_int_data = v
         ptr = <uint8_t*>(&signed_int_data[0])
     elif dtype == "l":
+        if _WINDOWS:
+            signed_int_data = v
+            ptr = <uint8_t*>(&signed_int_data[0])
+        else:
+            signed_long_data = v
+            ptr = <uint8_t*>(&signed_long_data[0])
+    elif dtype == "q":
         signed_long_data = v
         ptr = <uint8_t*>(&signed_long_data[0])
     elif dtype == "f":
