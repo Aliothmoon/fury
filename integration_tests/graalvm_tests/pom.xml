@@ -23,9 +23,9 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <parent>
-    <groupId>org.apache.fury</groupId>
-    <artifactId>fury-parent</artifactId>
-    <version>0.11.0-SNAPSHOT</version>
+    <groupId>org.apache.fory</groupId>
+    <artifactId>fory-parent</artifactId>
+    <version>0.17.0-SNAPSHOT</version>
     <relativePath>../../java</relativePath>
   </parent>
   <modelVersion>4.0.0</modelVersion>
@@ -35,8 +35,7 @@
     <maven.compiler.target>17</maven.compiler.target>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <native.maven.plugin.version>0.9.28</native.maven.plugin.version>
-    <junit.jupiter.version>5.8.1</junit.jupiter.version>
-    <mainClass>org.apache.fury.graalvm.Main</mainClass>
+    <mainClass>org.apache.fory.graalvm.Main</mainClass>
     <imageName>main</imageName>
   </properties>
 
@@ -55,9 +54,19 @@
 
   <dependencies>
     <dependency>
-      <groupId>org.apache.fury</groupId>
-      <artifactId>fury-core</artifactId>
+      <groupId>org.apache.fory</groupId>
+      <artifactId>fory-core</artifactId>
       <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.fory</groupId>
+      <artifactId>fory-graalvm-feature</artifactId>
+      <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.testng</groupId>
+      <artifactId>testng</artifactId>
+      <scope>test</scope>
     </dependency>
   </dependencies>
 
@@ -149,19 +158,13 @@
             <version>${native.maven.plugin.version}</version>
             <extensions>true</extensions>
             <executions>
+              <!-- Build native image (no fork) to align with CI behavior -->
               <execution>
                 <id>build-native</id>
                 <goals>
-                  <goal>build</goal>
+                  <goal>compile-no-fork</goal>
                 </goals>
                 <phase>package</phase>
-              </execution>
-              <execution>
-                <id>test-native</id>
-                <goals>
-                  <goal>test</goal>
-                </goals>
-                <phase>test</phase>
               </execution>
             </executions>
             <configuration>
@@ -173,7 +176,6 @@
                 <!-- for fast build -->
                 <!-- <buildArg>-Ob</buildArg> -->
                 <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
-                <buildArg>-H:DynamicProxyConfigurationFiles=src/main/resources/META-INF/native-image/proxy-config.json</buildArg>
               </buildArgs>
             </configuration>
           </plugin>
@@ -185,17 +187,13 @@
               <execution>
                 <id>java-agent</id>
                 <goals>
-                  <goal>exec</goal>
+                  <goal>java</goal>
                 </goals>
                 <phase>test</phase>
                 <configuration>
-                  <executable>java</executable>
-                  <workingDirectory>${project.build.directory}</workingDirectory>
-                  <arguments>
-                    <argument>-classpath</argument>
-                    <classpath/>
-                    <argument>${mainClass}</argument>
-                  </arguments>
+                  <mainClass>${mainClass}</mainClass>
+                  <includeProjectDependencies>true</includeProjectDependencies>
+                  <includePluginDependencies>false</includePluginDependencies>
                 </configuration>
               </execution>
             </executions>

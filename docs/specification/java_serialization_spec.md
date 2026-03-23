@@ -1,14 +1,14 @@
 ---
-title: Fury Java Serialization Format
+title: Java Serialization Format
 sidebar_position: 1
-id: fury_java_serialization_spec
+id: java_serialization_spec
 license: |
   Licensed to the Apache Software Foundation (ASF) under one or more
   contributor license agreements.  See the NOTICE file distributed with
   this work for additional information regarding copyright ownership.
   The ASF licenses this file to You under the Apache License, Version 2.0
-  (the "License"); you may not use this file except in compliance with
-  the License.  You may obtain a copy of the License at
+  (the "License"); you may not use this file except in compliance
+  with the License.  You may obtain a copy of the License at
 
      http://www.apache.org/licenses/LICENSE-2.0
 
@@ -21,537 +21,461 @@ license: |
 
 ## Spec overview
 
-Fury Java Serialization is an automatic object serialization framework that supports reference and polymorphism. Fury
-will
-convert an object from/to fury java serialization binary format. Fury has two core concepts for java serialization:
+Apache Fory Java serialization is a dynamic binary format for Java object graphs. It supports
+shared references, circular references, polymorphism, and optional schema evolution. The format is
+stream friendly: shared type metadata is written inline when needed and there is no meta start
+offset.
 
-- **Fury Java Binary format**
-- **Framework to convert object to/from Fury Java Binary format**
+The Java native format is an extension of the xlang wire format and reuses the same core framing
+and encodings; see `docs/specification/xlang_serialization_spec.md` for the shared baseline.
 
-The serialization format is a dynamic binary format. The dynamics and reference/polymorphism support make Fury flexible,
-much more easy to use, but
-also introduce more complexities compared to static serialization frameworks. So the format will be more complex.
-
-Here is the overall format:
+Overall layout:
 
 ```
-| fury header | object ref meta | object class meta | object value data |
+| fory header | object ref meta | object type meta | object value data |
 ```
 
-The data are serialized using little endian byte order overall. If bytes swap is costly for some object,
-Fury will write the byte order for that object into the data instead of converting it to little endian.
+All data is encoded in little endian byte order. When running on a big endian platform, array
+serializers swap byte order on write/read so the on-wire layout remains little endian.
 
-## Fury header
+## Fory header
 
-Fury header consists starts one byte:
-
-```
-|     4 bits    | 1 bit | 1 bit | 1 bit  | 1 bit |          optional 4 bytes          |
-+---------------+-------+-------+--------+-------+------------------------------------+
-| reserved bits |  oob  | xlang | endian | null  | unsigned int for meta start offset |
-```
-
-- null flag: 1 when object is null, 0 otherwise. If an object is null, other bits won't be set.
-- endian flag: 1 when data is encoded by little endian, 0 for big endian.
-- xlang flag: 1 when serialization uses xlang format, 0 when serialization uses Fury java format.
-- oob flag: 1 when passed `BufferCallback` is not null, 0 otherwise.
-
-If meta share mode is enabled, an uncompressed unsigned int is appended to indicate the start offset of metadata.
-
-## Reference Meta
-
-Reference tracking handles whether the object is null, and whether to track reference for the object by writing
-corresponding flags and maintaining internal state.
-
-Reference flags:
-
-| Flag                | Byte Value | Description                                                                                                                                             |
-|---------------------|------------|---------------------------------------------------------------------------------------------------------------------------------------------------------|
-| NULL FLAG           | `-3`       | This flag indicates the object is a null value. We don't use another byte to indicate REF, so that we can save one byte.                                |
-| REF FLAG            | `-2`       | This flag indicates the object is already serialized previously, and fury will write a ref id with unsigned varint format instead of serialize it again |
-| NOT_NULL VALUE FLAG | `-1`       | This flag indicates the object is a non-null value and fury doesn't track ref for this type of object.                                                  |
-| REF VALUE FLAG      | `0`        | This flag indicates the object is referencable and the first time to serialize.                                                                         |
-
-When reference tracking is disabled globally or for specific types, or for certain types within a particular
-context(e.g., a field of a class), only the `NULL` and `NOT_NULL VALUE` flags will be used for reference meta.
-
-## Class Meta
-
-Fury supports to register class by an optional id, the registration can be used for security check and class
-identification.
-If a class is registered, it will have a user-provided or an auto-growing unsigned int i.e. `class_id`.
-
-Depending on whether meta share mode and registration is enabled for current class, Fury will write class meta
-differently.
-
-### Schema consistent
-
-If schema consistent mode is enabled globally or enabled for current class, class meta will be written as follows:
-
-- If class is registered, it will be written as a fury unsigned varint: `class_id << 1`.
-- If class is not registered:
-  - If class is not an array, fury will write one byte `0bxxxxxxx1` first, then write class name.
-    - The first little bit is `1`, which is different from first bit `0` of
-          encoded class id. Fury can use this information to determine whether to read class by class id for
-          deserialization.
-  - If class is not registered and class is an array, fury will write one byte `dimensions << 1 | 1` first, then write
-      component
-      class subsequently. This can reduce array class name cost if component class is or will be serialized.
-  - Class will be written as two enumerated fury unsigned by default: `package name` and `class name`. If meta share
-      mode is
-      enabled,
-      class will be written as an unsigned varint which points to index in `MetaContext`.
-
-### Schema evolution
-
-If schema evolution mode is enabled globally or enabled for current class, class meta will be written as follows:
-
-- If meta share mode is not enabled, class meta will be written as schema consistent mode. Additionally, field meta such
-  as field type
-  and name will be written with the field value using a key-value like layout.
-- If meta share mode is enabled, class meta will be written as a meta-share encoded binary if class hasn't been written
-  before, otherwise an unsigned varint id which references to previous written class meta will be written.
-
-## Meta share
-
-> This mode will forbid streaming writing since it needs to look back for update the start offset after the whole object
-> graph
-> writing and meta collecting is finished. Only in this way we can ensure deserialization failure doesn't lost shared
-> meta.
-> Meta streamline will be supported in the future for enclosed meta sharing which doesn't cross multiple serializations
-> of different objects.
-
-For Schema consistent mode, class will be encoded as an enumerated string by full class name. Here we mainly describe
-the meta layout for schema evolution mode:
+Java native serialization writes a one byte bitmap header. The header layout mirrors the xlang
+bitmap and uses the same flag bits.
 
 ```
-|      8 bytes meta header      | meta size |   variable bytes   |  variable bytes   | variable bytes |
-+-------------------------------+-----------|--------------------+-------------------+----------------+
-| 7 bytes hash + 1 bytes header | 1~2 bytes | current class meta | parent class meta |      ...       |
+|     5 bits    | 1 bit | 1 bit | 1 bit |
++--------------+-------+-------+-------+
+| reserved     |  oob  | xlang | null  |
 ```
 
-Class meta are encoded from parent class to leaf class, only class with serializable fields will be encoded.
+- null flag: 1 when object is null, 0 otherwise. If object is null, other bits are not set.
+- xlang flag: 1 when serialization uses xlang format, 0 when serialization uses Java native format.
+- oob flag: 1 when `BufferCallback` is not null, 0 otherwise.
 
-### Meta header
+The header is always a single byte; no language ID is written.
 
-Meta header is a 64 bits number value encoded in little endian order.
+## Reference meta
 
-- Lowest 4 digits `0b0000~0b1110` are used to record num classes. `0b1111` is preserved to indicate that Fury need to
-  read more bytes for length using Fury unsigned int encoding. If current class doesn't has parent class, or parent
-  class doesn't have fields to serialize, or we're in a context which serialize fields of current class
-  only( `ObjectStreamSerializer#SlotInfo` is an example), num classes will be 1.
-- 5rd bit is used to indicate whether this class needs schema evolution.
-- 6rd bit is used to indicate whether the size sum of all layers meta is less than 256.
-- Other 56 bits is used to store the unique hash of `flags + all layers class meta`.
+Reference tracking uses the same flags as the xlang specification.
 
-### Meta size
+| Flag                | Byte Value | Description                                                                                              |
+| ------------------- | ---------- | -------------------------------------------------------------------------------------------------------- |
+| NULL FLAG           | `-3`       | Object is null. No further bytes are written for this object.                                            |
+| REF FLAG            | `-2`       | Object was already serialized. Followed by unsigned varint32 reference ID.                               |
+| NOT_NULL VALUE FLAG | `-1`       | Object is non-null but reference tracking is disabled for this type. Object data follows immediately.    |
+| REF VALUE FLAG      | `0`        | Object is referencable and this is its first occurrence. Object data follows. Assigns next reference ID. |
 
-- If the size sum of all layers meta is less than 256, then one byte is written next to indicate the length of meta.
-- Otherwise, write size as two bytes in little endian.
+When reference tracking is disabled globally or for a specific field/type, only `NULL FLAG` and
+`NOT_NULL VALUE FLAG` are used.
 
-### Single layer class meta
+## Type system and type IDs
 
-```
-|      unsigned varint       |      meta string      |     meta string     |  field info: variable bytes   | variable bytes  | ... |
-+----------------------------+-----------------------+---------------------+-------------------------------+-----------------+-----+
-| num fields + register flag | header + package name | header + class name | header + type id + field name | next field info | ... |
-```
-
-- num fields: encode `num fields << 1 | register flag(1 when class registered)` as unsigned varint.
-  - If class is registered, then an unsigned varint class id will be written next, package and class name will be
-      omitted.
-  - If current class is schema consistent, then num field will be `0` to flag it.
-  - If current class isn't schema consistent, then num field will be the number of compatible fields. For example,
-      users
-      can use tag id to mark some field as compatible field in schema consistent context. In such cases, schema
-      consistent
-      fields will be serialized first, then compatible fields will be serialized next. At deserialization, Fury will use
-      fields info of those fields which aren't annotated by tag id for deserializing schema consistent fields, then use
-      fields info in meta for deserializing compatible fields.
-- Package name encoding(omitted when class is registered):
-  - encoding algorithm: `UTF8/ALL_TO_LOWER_SPECIAL/LOWER_UPPER_DIGIT_SPECIAL`
-  - Header: `6 bits size | 2 bits encoding flags`. The `6 bits size: 0~63`  will be used to indicate size `0~63`,
-      the value `63` the size need more byte to read, the encoding will encode `size - 63` as a varint next.
-- Class name encoding(omitted when class is registered):
-  - encoding algorithm: `UTF8/LOWER_UPPER_DIGIT_SPECIAL/FIRST_TO_LOWER_SPECIAL/ALL_TO_LOWER_SPECIAL`
-  - header: `6 bits size | 2 bits encoding flags`. The `6 bits size: 0~63`  will be used to indicate size `0~63`,
-      the value `63` the size need more byte to read, the encoding will encode `size - 63` as a varint next.
-- Field info:
-  - header(8
-      bits): `3 bits size + 2 bits field name encoding + polymorphism flag + nullability flag + ref tracking flag`.
-      Users can use annotation to provide those info.
-    - 2 bits field name encoding:
-      - encoding: `UTF8/ALL_TO_LOWER_SPECIAL/LOWER_UPPER_DIGIT_SPECIAL/TAG_ID`
-      - If tag id is used, i.e. field name is written by an unsigned varint tag id. 2 bits encoding will be `11`.
-    - size of field name:
-      - The `3 bits size: 0~7`  will be used to indicate length `1~7`, the value `6` the size read more bytes,
-              the encoding will encode `size - 7` as a varint next.
-      - If encoding is `TAG_ID`, then num_bytes of field name will be used to store tag id.
-    - ref tracking: when set to 1, ref tracking will be enabled for this field.
-    - nullability: when set to 1, this field can be null.
-    - polymorphism: when set to 1, the actual type of field will be the declared field type even the type if
-          not `final`.
-  - type id:
-    - For registered type-consistent classes, it will be the registered class id.
-    - Otherwise it will be encoded as `OBJECT_ID` if it isn't `final` and `FINAL_OBJECT_ID` if it's `final`. The
-          meta for such types is written separately instead of inlining here is to reduce meta space cost if object of
-          this type is serialized in current object graph multiple times, and the field value may be null too.
-  - Field name: If type id is set, type id will be used instead. Otherwise meta string encoding length and data will
-      be written instead.
-
-Field order are left as implementation details, which is not exposed to specification, the deserialization need to
-resort fields based on Fury field comparator. In this way, fury can compute statistics for field names or types and
-using a more compact encoding.
-
-### Other layers class meta
-
-Same encoding algorithm as the previous layer except:
-
-- header + package name:
-  - Header:
-    - If package name has been written before: `varint index + sharing flag(set)` will be written
-    - If package name hasn't been written before:
-      - If meta string encoding is `LOWER_SPECIAL` and the length of encoded string `<=` 64, then header will be
-              `6 bits size + encoding flag(set) + sharing flag(unset)`.
-      - Otherwise, header will
-              be `3 bits unset + 3 bits encoding flags + encoding flag(unset) + sharing flag(unset)`
-
-## Meta String
-
-Meta string is mainly used to encode meta strings such as class name and field names.
-
-### Encoding Algorithms
-
-String binary encoding algorithm:
-
-| Algorithm                 | Pattern       | Description                                                                                                                                                                                                                                                                              |
-|---------------------------|---------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| LOWER_SPECIAL             | `a-z._$\|`    | every char is written using 5 bits, `a-z`: `0b00000~0b11001`, `._$\|`: `0b11010~0b11101`, prepend one bit at the start to indicate whether strip last char since last byte may have 7 redundant bits(1 indicates strip last char)                                                        |
-| LOWER_UPPER_DIGIT_SPECIAL | `a-zA-Z0~9._` | every char is written using 6 bits, `a-z`: `0b00000~0b11001`, `A-Z`: `0b11010~0b110011`, `0~9`: `0b110100~0b111101`, `._`: `0b111110~0b111111`,  prepend one bit at the start to indicate whether strip last char since last byte may have 7 redundant bits(1 indicates strip last char) |
-| UTF-8                     | any chars     | UTF-8 encoding                                                                                                                                                                                                                                                                           |
-
-Encoding flags:
-
-| Encoding Flag             | Pattern                                                       | Encoding Algorithm                                                                                                                                          |
-|---------------------------|---------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| LOWER_SPECIAL             | every char is in `a-z._$\|`                                   | `LOWER_SPECIAL`                                                                                                                                             |
-| FIRST_TO_LOWER_SPECIAL    | every char is in `a-z[c1,c2]` except first char is upper case | replace first upper case char to lower case, then use `LOWER_SPECIAL`                                                                                       |
-| ALL_TO_LOWER_SPECIAL      | every char is in `a-zA-Z[c1,c2]`                              | replace every upper case char by `\|` + `lower case`, then use `LOWER_SPECIAL`, use this encoding if it's smaller than Encoding `LOWER_UPPER_DIGIT_SPECIAL` |
-| LOWER_UPPER_DIGIT_SPECIAL | every char is in `a-zA-Z[c1,c2]`                              | use `LOWER_UPPER_DIGIT_SPECIAL` encoding if it's smaller than Encoding `FIRST_TO_LOWER_SPECIAL`                                                             |
-| UTF8                      | any utf-8 char                                                | use `UTF-8` encoding                                                                                                                                        |
-| Compression               | any utf-8 char                                                | lossless compression                                                                                                                                        |
-
-Notes:
-
-- For package name encoding, `c1,c2` should be `._`; For field/type name encoding, `c1,c2` should be `_$`;
-- Depending on cases, one can choose encoding `flags + data` jointly, uses 3 bits of first byte for flags and other
-  bytes
-  for data.
-
-### Shared meta string
-
-The shared meta string format consists of header and encoded string binary. Header of encoded string binary will be
-inlined
-in shared meta header.
-
-Header is written using little endian order, Fury can read this flag first to determine how to deserialize the data.
-
-#### Write by data
-
-If string hasn't been written before, the data will be written as follows:
+Java native serialization uses the unified type ID layout shared with xlang:
 
 ```
-| unsigned varint: string binary size + 1 bit: not written before | 56 bits: unique hash | 3 bits encoding flags + string binary |
+full_type_id = (user_type_id << 8) | internal_type_id
 ```
 
-If string binary size is less than `16` bytes, the hash will be omitted to save spaces. Unique hash can be omitted too
-if caller pass a flag to disable it. In such cases, the format will be:
+- `internal_type_id` is the low 8 bits describing the kind (enum/struct/ext, named variants, or a
+  built-in type).
+- `user_type_id` is the numeric registration ID (0-based) for user-defined enum/struct/ext types.
+- Named types use `NAMED_*` internal IDs and carry names in metadata rather than embedding a user
+  ID.
+
+### Shared internal type IDs (0-63)
+
+Java native mode shares the xlang internal IDs for all values below 64. IDs `0~56` are defined by
+the xlang spec, while `57~63` are reserved for future internal use. These IDs are stable across
+languages.
+
+See the internal type ID table in
+[Xlang Serialization Format](xlang_serialization_spec.md#internal-type-id-table).
+Java shares all IDs `< 64`, with `57~63` reserved for future internal use.
+
+### Java native built-in type IDs
+
+Java native serialization assigns Java-specific built-ins starting at
+`Types.BOUND + 5` (`Types.BOUND` is 64; 5 IDs are reserved for future use).
+Type IDs in `0~56` are shared with xlang; `57~63` are reserved; `64+` are only
+valid in Java native mode.
+
+| Type ID | Name                       | Description                    |
+| ------- | -------------------------- | ------------------------------ |
+| 69      | VOID_ID                    | java.lang.Void                 |
+| 70      | CHAR_ID                    | java.lang.Character            |
+| 71      | PRIMITIVE_VOID_ID          | void                           |
+| 72      | PRIMITIVE_BOOL_ID          | boolean                        |
+| 73      | PRIMITIVE_INT8_ID          | byte                           |
+| 74      | PRIMITIVE_CHAR_ID          | char                           |
+| 75      | PRIMITIVE_INT16_ID         | short                          |
+| 76      | PRIMITIVE_INT32_ID         | int                            |
+| 77      | PRIMITIVE_FLOAT32_ID       | float                          |
+| 78      | PRIMITIVE_INT64_ID         | long                           |
+| 79      | PRIMITIVE_FLOAT64_ID       | double                         |
+| 80      | PRIMITIVE_BOOLEAN_ARRAY_ID | boolean[]                      |
+| 81      | PRIMITIVE_BYTE_ARRAY_ID    | byte[]                         |
+| 82      | PRIMITIVE_CHAR_ARRAY_ID    | char[]                         |
+| 83      | PRIMITIVE_SHORT_ARRAY_ID   | short[]                        |
+| 84      | PRIMITIVE_INT_ARRAY_ID     | int[]                          |
+| 85      | PRIMITIVE_FLOAT_ARRAY_ID   | float[]                        |
+| 86      | PRIMITIVE_LONG_ARRAY_ID    | long[]                         |
+| 87      | PRIMITIVE_DOUBLE_ARRAY_ID  | double[]                       |
+| 88      | STRING_ARRAY_ID            | String[]                       |
+| 89      | OBJECT_ARRAY_ID            | Object[]                       |
+| 90      | ARRAYLIST_ID               | java.util.ArrayList            |
+| 91      | HASHMAP_ID                 | java.util.HashMap              |
+| 92      | HASHSET_ID                 | java.util.HashSet              |
+| 93      | CLASS_ID                   | java.lang.Class                |
+| 94      | EMPTY_OBJECT_ID            | empty object stub              |
+| 95      | LAMBDA_STUB_ID             | lambda stub                    |
+| 96      | JDK_PROXY_STUB_ID          | JDK proxy stub                 |
+| 97      | REPLACE_STUB_ID            | writeReplace/readResolve stub  |
+| 98      | NONEXISTENT_META_SHARED_ID | meta-shared unknown class stub |
+
+### Registration and named types
+
+User-defined enum/struct/ext types can be registered by numeric ID or by name.
+
+- Numeric registration: `full_type_id = (user_id << 8) | internal_type_id`.
+- Name registration: type meta uses namespace and type name (see below).
+- Unregistered types are encoded as named types using namespace = package name and type name =
+  simple class name.
+
+Named type selection rules for unregistered types:
+
+- enum -> NAMED_ENUM
+- struct-like serializers -> NAMED_STRUCT (or NAMED_COMPATIBLE_STRUCT in compatible mode)
+- all other custom serializers -> NAMED_EXT
+
+## Type meta encoding
+
+Every value is written with a type ID followed by optional type metadata:
+
+1. Write `type_id` using varuint32 small7 encoding.
+2. For `NAMED_ENUM`, `NAMED_STRUCT`, `NAMED_EXT`, `NAMED_COMPATIBLE_STRUCT`:
+   - If meta share is enabled: write shared class meta (streaming format).
+   - Otherwise: write namespace and type name as meta strings.
+3. For `COMPATIBLE_STRUCT`:
+   - If meta share is enabled: write shared class meta (streaming format).
+   - Otherwise: no extra meta (type ID is sufficient).
+4. All other types: no extra meta.
+
+### Shared class meta (streaming)
+
+When meta share is enabled, Java uses the streaming shared meta protocol and writes TypeDef
+bytes inline on first use.
 
 ```
-| unsigned varint: string binary size + 1 bit: not written before  | 3 bits encoding flags + string binary |
+| varuint32: index_marker | [class def bytes if new] |
+
+index_marker = (index << 1) | flag
+flag = 1 -> reference
+flag = 0 -> new type
 ```
 
-#### Write by ref
+- If `flag == 1`, this is a reference to a previously written type. No class def bytes follow.
+- If `flag == 0`, this is a new type definition and class def bytes are written inline.
 
-If string has been written before, the data will be written as follows:
+The index is assigned sequentially in the order types are first encountered.
+
+## Schema modes
+
+Java native serialization supports two schema modes:
+
+- Schema consistent (compatible mode disabled): fields are serialized in a fixed order and no
+  ClassDef is required. Type meta uses `STRUCT` or `NAMED_STRUCT` for user-defined classes.
+- Schema evolution (compatible mode enabled): fields are serialized with schema evolution metadata
+  (ClassDef). Type meta uses `COMPATIBLE_STRUCT` or `NAMED_COMPATIBLE_STRUCT`.
+
+## ClassDef format (compatible mode)
+
+ClassDef is the schema evolution metadata encoded for compatible structs. It is written inline
+when shared meta is enabled, or referenced by index when already seen.
+
+### Binary layout
 
 ```
-| unsigned varint: written string id + 1 bit: written before |
+| 8 bytes header | [varuint32 extra size] | class meta bytes |
 ```
 
-## Value Format
+Header layout (lower bits on the right):
 
-### Basic types
+```
+| 50-bit hash | 4 bits reserved | 1 bit compress | 1 bit has_fields_meta | 8-bit size |
+```
 
-#### Bool
+- size: lower 8 bits. If size equals the mask (0xFF), write extra size as varuint32 and add it.
+- compress: set when payload is compressed.
+- has_fields_meta: set when field metadata is present.
+- reserved: bits 10-13 are reserved for future use and must be zero.
+- hash: 50-bit hash of the payload and flags.
 
-- size: 1 byte
-- format: 0 for `false`, 1 for `true`
+### Class meta bytes
 
-#### Byte
+Class meta encodes a linearized class hierarchy (from parent to leaf) and field metadata:
 
-- size: 1 byte
-- format: write as pure byte.
+```
+| num_classes | class_layer_0 | class_layer_1 | ... |
 
-#### Short
+class_layer:
+| num_fields << 1 | registered_flag | [type_id if registered] |
+| namespace | type_name | field_infos |
+```
 
-- size: 2 byte
-- byte order: little endian order
+- `num_classes` stores `(num_layers - 1)` in a single byte.
+  - If it equals `0b1111`, read an extra varuint32 small7 and add it.
+  - The actual number of layers is `num_classes + 1`.
+- `registered_flag` is 1 if the class is registered by numeric ID.
+- If registered by ID, the class type ID follows (varuint32 small7).
+- If registered by name or unregistered, namespace and type name are written as meta strings.
 
-#### Char
+### Field info
 
-- size: 2 byte
-- byte order: little endian order
+Each field uses a compact header followed by its name bytes (omitted when TAG_ID is used) and its
+type info:
 
-#### Unsigned int
+```
+| field_header | [field_name_bytes] | field_type |
+```
 
-- size: 1~5 byte
-- Format: The most significant bit (MSB) in every byte indicates whether to have the next byte. If first bit is set
-  i.e. `b & 0x80 == 0x80`, then
-  the next byte should be read until the first bit of the next byte is unset.
+`field_header` bits:
 
-#### Signed int
+- bit 0: trackingRef
+- bit 1: nullable
+- bits 2-3: field name encoding
+- bits 4-6: name length (len-1), or tag ID when TAG_ID is used; value 7 indicates extended length
+- bit 7: reserved (0)
 
-- size: 1~5 byte
-- Format: First convert the number into positive unsigned int by `(v << 1) ^ (v >> 31)` ZigZag algorithm, then encoding
-  it as an unsigned int.
+Field name encoding:
 
-#### Unsigned long
+- 0: UTF8
+- 1: ALL_TO_LOWER_SPECIAL
+- 2: LOWER_UPPER_DIGIT_SPECIAL
+- 3: TAG_ID (field name omitted, tag ID stored in size field)
 
-- size: 1~9 byte
-- Fury PVL(Progressive Variable-length Long) Encoding:
-  - positive long format: first bit in every byte indicates whether to have the next byte. If first bit is set
-      i.e. `b & 0x80 == 0x80`, then the next byte should be read until the first bit is unset.
+If length is extended (size==7), an extra varuint32 small7 storing `(len-1) - 7` follows.
 
-#### Signed long
+### Field type encoding
 
-- size: 1~9 byte
-- Fury SLI(Small long as int) Encoding:
-  - If long is in [-1073741824, 1073741823], encode as 4 bytes int: `| little-endian: ((int) value) << 1 |`
-  - Otherwise write as 9 bytes: `| 0b1 | little-endian 8 bytes long |`
-- Fury PVL(Progressive Variable-length Long) Encoding:
-  - First convert the number into positive unsigned long by `(v << 1) ^ (v >> 63)` ZigZag algorithm to reduce cost of
-      small negative numbers, then encoding it as an unsigned long.
+Field types are encoded with a type tag and optional nested type info. For nested types, the header
+includes nullable/trackingRef flags in the low bits.
+Top-level field types use the tag only (no flags).
 
-#### Float
+Type tags:
 
-- size: 4 byte
-- format: convert float to 4 bytes int by `Float.floatToRawIntBits`, then write as binary by little endian order.
+| Tag | Field type                                |
+| --- | ----------------------------------------- |
+| 0   | Object (ObjectFieldType)                  |
+| 1   | Map (MapFieldType)                        |
+| 2   | Collection/List/Set (CollectionFieldType) |
+| 3   | Array (ArrayFieldType)                    |
+| 4   | Enum (EnumFieldType)                      |
+| 5+  | Registered type (RegisteredFieldType)     |
 
-#### Double
+Encoding rules:
 
-- size: 8 byte
-- format: convert double to 8 bytes int by `Double.doubleToRawLongBits`, then write as binary by little endian order.
+- ObjectFieldType: write tag 0.
+- MapFieldType: write tag 1, then key type, then value type.
+- CollectionFieldType: write tag 2, then element type.
+- ArrayFieldType: write tag 3, then dimensions, then component type.
+- EnumFieldType: write tag 4.
+- RegisteredFieldType: write tag `5 + type_id`.
+
+For nested types, nullable/trackingRef flags are stored in the low bits of the header as
+`(type_tag << 2) | (nullable << 1) | tracking_ref`.
+
+## Meta string encoding
+
+Namespace, type names, and field names use the same meta string encodings as the xlang spec.
+
+### Package and type names
+
+Header format:
+
+```
+| 6 bits size | 2 bits encoding |
+```
+
+- size is the byte length of the encoded name.
+- if size == 63, write extra length `(size - 63)` as varuint32 small7.
+
+Encodings:
+
+- Package name: UTF8, ALL_TO_LOWER_SPECIAL, LOWER_UPPER_DIGIT_SPECIAL
+- Type name: UTF8, LOWER_UPPER_DIGIT_SPECIAL, FIRST_TO_LOWER_SPECIAL, ALL_TO_LOWER_SPECIAL
+
+### Field names
+
+Field name encoding is described in the ClassDef field header section. When using TAG_ID, the
+field name bytes are omitted and the tag ID is stored in the size field.
+
+### Encoding algorithms
+
+See the xlang specification for encoding algorithms and tables:
+`docs/specification/xlang_serialization_spec.md#meta-string`.
+
+## Value encodings
+
+This section describes the byte layouts for common built-in serializers used in Java native
+serialization. Custom serializers (EXT) may define additional formats but must still follow the
+reference and type meta rules described above.
+
+### Primitives
+
+- boolean: 1 byte (0x00 or 0x01).
+- byte: 1 byte.
+- short: 2 bytes little endian.
+- char: 2 bytes little endian (UTF-16 code unit).
+- int:
+  - fixed: 4 bytes little endian.
+  - varint: signed varint32 (ZigZag) when `compressInt` is enabled.
+- long:
+  - fixed: 8 bytes little endian.
+  - varint: signed varint64 (ZigZag) when `longEncoding=VARINT`.
+  - tagged: tagged int64 when `longEncoding=TAGGED`.
+- float: IEEE 754 float32, little endian.
+- double: IEEE 754 float64, little endian.
+
+Varint encodings follow the xlang spec:
+`docs/specification/xlang_serialization_spec.md#unsigned-varint32`.
 
 ### String
 
-Format:
+Strings are encoded as:
 
 ```
-| header: size << 2 | 2 bits encoding flags | binary data |
+| varuint36_small: (num_bytes << 2) | coder | string bytes |
 ```
 
-- `size + encoding` will be concat as a long and encoded as an unsigned var long. The little 2 bits is used for
-  encoding:
-  0 for `latin`, 1 for `utf-16`, 2 for `utf-8`.
-- encoded string binary data based on encoding: `latin/utf-16/utf-8`.
+- coder: 2-bit value
+  - 0: LATIN1
+  - 1: UTF16
+  - 2: UTF8
+- num_bytes: byte length of the encoded string payload.
 
-Which encoding to choose:
-
-- For JDK8: fury detect `latin` at runtime, if string is `latin` string, then use `latin` encoding, otherwise
-  use `utf-16`.
-- For JDK9+: fury use `coder` in `String` object for encoding, `latin`/`utf-16` will be used for encoding.
-- If the string is encoded by `utf-8`, then fury will use `utf-8` to decode the data. But currently fury doesn't enable
-  utf-8 encoding by default for java. Cross-language string serialization of fury uses `utf-8` by default.
-
-### Collection
-
-> All collection serializers must extend `AbstractCollectionSerializer`.
-
-Format:
-
-```
-length(unsigned varint) | collection header | elements header | elements data
-```
-
-#### Collection header
-
-- For `ArrayList/LinkedArrayList/HashSet/LinkedHashSet`, this will be empty.
-- For `TreeSet`, this will be `Comparator`
-- For subclass of `ArrayList`, this may be extra object field info.
-
-#### Elements header
-
-In most cases, all collection elements are same type and not null, elements header will encode those homogeneous
-information to avoid the cost of writing it for every element. Specifically, there are four kinds of information
-which will be encoded by elements header, each use one bit:
-
-- If track elements ref, use the first bit `0b1` of the header to flag it.
-- If the collection has null, use the second bit `0b10` of the header to flag it. If ref tracking is enabled for this
-  element type, this flag is invalid.
-- If the collection element types are not declared type, use the 3rd bit `0b100` of the header to flag it.
-- If the collection element types are different, use the 4rd bit `0b1000` header to flag it.
-
-By default, all bits are unset, which means all elements won't track ref, all elements are same type, not null and
-the actual element is the declared type in the custom class field.
-
-The implementation can generate different deserialization code based read header, and look up the generated code from a
-linear map/list.
-
-#### Elements data
-
-Based on the elements header, the serialization of elements data may skip `ref flag`/`null flag`/`element class info`.
-
-`CollectionSerializer#write/read` can be taken as an example.
-
-### Array
-
-#### Primitive array
-
-Primitive array are taken as a binary buffer, serialization will just write the length of array size as an unsigned int,
-then copy the whole buffer into the stream.
-
-Such serialization won't compress the array. If users want to compress primitive array, users need to register custom
-serializers for such types.
-
-#### Object array
-
-Object array is serialized using the collection format. Object component type will be taken as collection element
-generic
-type.
-
-### Map
-
-> All Map serializers must extend `AbstractMapSerializer`.
-
-Format:
-
-```
-| length(unsigned varint) | map header | key value pairs data |
-```
-
-#### Map header
-
-- For `HashMap/LinkedHashMap`, this will be empty.
-- For `TreeMap`, this will be `Comparator`
-- For other `Map`, this may be extra object field info.
-
-#### Map Key-Value data
-
-Map iteration is too expensive, Fury won't compute the header like for collection before since it introduce
-[considerable overhead](https://github.com/apache/fury/issues/925).
-Users can use `MapFieldInfo` annotation to provide header in advance. Otherwise Fury will use first key-value pair to
-predict header optimistically, and update the chunk header if the prediction failed at some pair.
-
-Fury will serialize map chunk by chunk, every chunk has 127 pairs at most.
-
-```
-|    1 byte      |     1 byte     | variable bytes  |
-+----------------+----------------+-----------------+
-|    KV header   | chunk size: N  |   N*2 objects   |
-```
-
-KV header:
-
-- If track key ref, use the first bit `0b1` of the header to flag it.
-- If the key has null, use the second bit `0b10` of the header to flag it. If ref tracking is enabled for this
-  key type, this flag is invalid.
-- If the actual key type of map is not the declared key type, use the 3rd bit `0b100` of the header to flag it.
-- If track value ref, use the 4th bit `0b1000` of the header to flag it.
-- If the value has null, use the 5th bit `0b10000` of the header to flag it. If ref tracking is enabled for this
-  value type, this flag is invalid.
-- If the value type of map is not the declared value type, use the 6rd bit `0b100000` of the header to flag it.
-- If key or value is null, that key and value will be written as a separate chunk, and chunk size writing will be
-  skipped too.
-
-If streaming write is enabled, which means Fury can't update written `chunk size`. In such cases, map key-value data
-format will be:
-
-```
-|    1 byte      | variable bytes  |
-+----------------+-----------------+
-|    KV header   |   N*2 objects   |
-```
-
-`KV header` will be a header marked by `MapFieldInfo` in java. The implementation can generate different deserialization
-code based read header, and look up the generated code from a linear map/list.
+UTF16 is encoded as little endian 2-byte code units.
 
 ### Enum
 
-Enums are serialized as an unsigned var int. If the order of enum values change, the deserialized enum value may not be
-the value users expect. In such cases, users must register enum serializer by make it write enum value as an enumerated
-string with unique hash disabled.
+- If `serializeEnumByName` is enabled: write enum name as a meta string.
+- Otherwise: write enum ordinal as varuint32 small7.
 
-### Object
+### Binary (byte[])
 
-Object means object of `pojo/struct/bean/record` type.
-Object will be serialized by writing its fields data in fury order.
-
-Depending on schema compatibility, objects will have different formats.
-
-#### Field order
-
-Field will be ordered as following, every group of fields will have its own order:
-
-- primitive fields: larger size type first, smaller later, variable size type last.
-- boxed primitive fields: same order as primitive fields
-- final fields: same type together, then sorted by field name lexicographically.
-- collection fields: same order as final fields
-- map fields: same order as final fields
-- other fields: same order as final fields
-
-#### Schema consistent
-
-Object fields will be serialized one by one using following format:
+Primitive byte arrays are encoded as:
 
 ```
-Primitive field value:
-|   var bytes    |
-+----------------+
-|   value data   |
-+----------------+
-Boxed field value:
-| one byte  |   var bytes   |
-+-----------+---------------+
-| null flag |  field value  |
-+-----------+---------------+
-field value of final type with ref tracking:
-| var bytes | var objects |
-+-----------+-------------+
-| ref meta  | value data  |
-+-----------+-------------+
-field value of final type without ref tracking:
-| one byte  | var objects |
-+-----------+-------------+
-| null flag | field value |
-+-----------+-------------+
-field value of non-final type with ref tracking:
-| one byte  | var bytes | var objects |
-+-----------+-------------+-------------+
-| ref meta  | class meta  | value data  |
-+-----------+-------------+-------------+
-field value of non-final type without ref tracking:
-| one byte  | var bytes | var objects |
-+-----------+------------+------------+
-| null flag | class meta | value data |
-+-----------+------------+------------+
+| varuint32: num_bytes | raw bytes |
 ```
 
-#### Schema evolution
+### Primitive arrays
 
-Schema evolution have similar format as schema consistent mode for object except:
+Primitive arrays use `writePrimitiveArrayWithSize` unless compression is enabled:
 
-- For this object type itself, `schema consistent` mode will write class by id/name, but `schema evolution` mode will
-  write class field names, types and other meta too, see [Class meta](#class-meta).
-- Class meta of `final custom type` needs to be written too, because peers may not have this class defined.
+```
+| varuint32: byte_length | raw bytes |
+```
 
-### Class
+- `compressIntArray`: int[] encoded as `| varuint32: length | varint32... |`.
+- `compressLongArray`: long[] encoded as `| varuint32: length | varint64/tagged... |`.
 
-Class will be serialized using class meta format.
+### Object arrays
 
-## Implementation guidelines
+Object arrays encode length and a monomorphic flag:
 
-- Try to merge multiple bytes into an int/long write before writing to reduce memory IO and bound check cost.
-- Read multiple bytes as an int/long, then split into multiple bytes to reduce memory IO and bound check cost.
-- Try to use one varint/long to write flags and length together to save one byte cost and reduce memory io.
-- Condition branches are less expensive compared to memory IO cost unless there are too many branches.
+```
+| varuint32_small7: (length << 1) | mono_flag |
+```
+
+- If `mono_flag == 1`, all elements share a known component serializer. Each element uses ref
+  flags and the component serializer writes the value.
+- If `mono_flag == 0`, each element uses ref flags and writes its own class info and data.
+
+### Collections (List/Set)
+
+Collections encode length and a one-byte elements header:
+
+```
+| varuint32_small7: length | elements_header | [elem_class_info] | elements... |
+```
+
+`elements_header` bits (see `CollectionFlags`):
+
+- bit 0: TRACKING_REF
+- bit 1: HAS_NULL
+- bit 2: IS_DECL_ELEMENT_TYPE
+- bit 3: IS_SAME_TYPE
+
+If `IS_SAME_TYPE` is set and `IS_DECL_ELEMENT_TYPE` is not set, the element class info is written
+once before the elements. Element values then follow with either ref flags (if TRACKING_REF) or
+per-element null flags (if HAS_NULL).
+
+If `IS_SAME_TYPE` is not set, each element is written with its own class info and data (and
+optionally ref flags).
+
+### Maps
+
+Maps encode entry count and then a sequence of chunks. Each chunk groups entries that share key
+and value types.
+
+```
+| varuint32_small7: size | chunk_1 | chunk_2 | ... |
+
+chunk (non-null entries):
+| header | chunk_size | [key_class_info] | [value_class_info] | entries... |
+```
+
+`header` bits (see `MapFlags`):
+
+- bit 0: TRACKING_KEY_REF
+- bit 1: KEY_HAS_NULL
+- bit 2: KEY_DECL_TYPE
+- bit 3: TRACKING_VALUE_REF
+- bit 4: VALUE_HAS_NULL
+- bit 5: VALUE_DECL_TYPE
+
+If `KEY_DECL_TYPE` or `VALUE_DECL_TYPE` is unset, the corresponding class info is written once at
+the start of the chunk. `chunk_size` is a single byte (1..255) and `MAX_CHUNK_SIZE` is 255.
+
+#### Null key/value entries
+
+Entries with null key or null value are encoded as special single-entry chunks without a
+`chunk_size` byte:
+
+- null key, non-null value: `NULL_KEY_VALUE_DECL_TYPE*` flags, then value payload
+- null value, non-null key: `NULL_VALUE_KEY_DECL_TYPE*` flags, then key payload
+- null key and null value: `KV_NULL` header only
+
+These chunks always represent exactly one entry.
+
+### Objects and structs
+
+Object values are encoded as:
+
+```
+| ref meta | type meta | field data |
+```
+
+Field data is written by the serializer selected by the class info. For standard object
+serialization:
+
+- Fields are sorted deterministically using `DescriptorGrouper` order:
+  primitives, boxed primitives, built-ins, collections, maps, then other fields, with names sorted
+  within each category.
+- For compatible mode, `MetaSharedSerializer` uses ClassDef field metadata to read and skip
+  unknown fields.
+- For each field, the serializer uses field metadata (nullable, trackingRef, polymorphic) to decide
+  whether to write ref flags and/or type meta before the field value.
+
+### Extensions (EXT)
+
+Extension types are encoded by their registered serializer. Type meta is still written before the
+value as described above. The serializer is responsible for the value layout.
+
+## Out-of-band buffers
+
+When a `BufferCallback` is provided, the oob flag is set in the header and serializers may emit
+buffer references instead of inline bytes (for example, large primitive arrays). The out-of-band
+buffer protocol is specific to the callback implementation; the main stream only contains
+references to those buffers.

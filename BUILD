@@ -15,91 +15,79 @@
 # specific language governing permissions and limitations
 # under the License.
 
-load("@com_github_grpc_grpc//bazel:cython_library.bzl", "pyx_library")
-load("@compile_commands_extractor//:refresh_compile_commands.bzl", "refresh_compile_commands")
+load("//bazel:cython_library.bzl", "pyx_library")
+load("@hedron_compile_commands//:refresh_compile_commands.bzl", "refresh_compile_commands")
 
-
-pyx_library(
-    name = "_util",
-    srcs = glob([
-        "python/pyfury/includes/*.pxd",
-        "python/pyfury/_util.pxd",
-        "python/pyfury/_util.pyx",
-        "python/pyfury/__init__.py",
-    ]),
-    cc_kwargs = dict(
-        linkstatic = 1,
-    ),
-    deps = [
-        "//cpp/fury/util:fury_util",
-    ],
-)
 
 pyx_library(
     name = "mmh3",
     srcs = glob([
-        "python/pyfury/lib/mmh3/*.pxd",
-        "python/pyfury/lib/mmh3/*.pyx",
-        "python/pyfury/lib/mmh3/__init__.py",
+        "python/pyfory/lib/mmh3/*.pxd",
+        "python/pyfory/lib/mmh3/*.pyx",
+        "python/pyfory/lib/mmh3/__init__.py",
     ]),
     cc_kwargs = dict(
         linkstatic = 1,
     ),
     deps = [
-        "//cpp/fury/thirdparty:libmmh3",
+        "//cpp/fory/thirdparty:libmmh3",
     ],
 )
 
 pyx_library(
-    name = "_serialization",
+    name = "serialization",
     srcs = glob([
-        "python/pyfury/includes/*.pxd",
-        "python/pyfury/_util.pxd",
-        "python/pyfury/_serialization.pyx",
-        "python/pyfury/__init__.py",
-    ]),
+        "python/pyfory/includes/*.pxd",
+        "python/pyfory/serialization.pyx",
+        "python/pyfory/*.pxi",
+        "python/pyfory/__init__.py",
+    ]) + [
+        "python/pyfory/serialization.pxd",
+    ],
     cc_kwargs = dict(
         linkstatic = 1,
     ),
     deps = [
-        "//cpp/fury/util:fury_util",
-        "//cpp/fury/type:fury_type",
-        "//cpp/fury/python:_pyfury",
-        "@com_google_absl//absl/container:flat_hash_map",
+        "//cpp/fory/util:fory_util",
+        "//cpp/fory/type:fory_type",
+        "//python/pyfory/cpp:_pyfory",
+        "@abseil-cpp//absl/container:flat_hash_map",
     ],
 )
 
 pyx_library(
     name = "_format",
-    srcs = glob([
-        "python/pyfury/__init__.py",
-        "python/pyfury/includes/*.pxd",
-        "python/pyfury/_util.pxd",
-        "python/pyfury/*.pxi",
-        "python/pyfury/format/_format.pyx",
-        "python/pyfury/format/__init__.py",
-        "python/pyfury/format/*.pxi",
-    ]),
+    srcs = glob(
+        [
+            "python/pyfory/__init__.py",
+            "python/pyfory/includes/*.pxd",
+            "python/pyfory/*.pxi",
+            "python/pyfory/format/_format.pyx",
+            "python/pyfory/format/__init__.py",
+            "python/pyfory/format/*.pxi",
+        ],
+        allow_empty = True,
+    ) + [
+        "python/pyfory/serialization.pxd",
+    ],
     cc_kwargs = dict(
         linkstatic = 1,
     ),
     deps = [
-        "//cpp/fury:fury",
-        "@local_config_pyarrow//:python_numpy_headers",
-        "@local_config_pyarrow//:arrow_python_shared_library"
+        "//cpp/fory:fory",
+        "//python/pyfory/cpp:_pyfory",
     ],
 )
 
 genrule(
-    name = "cp_fury_so",
+    name = "cp_fory_so",
     srcs = [
-        ":python/pyfury/_util.so",
-        ":python/pyfury/lib/mmh3/mmh3.so",
-        ":python/pyfury/format/_format.so",
-        ":python/pyfury/_serialization.so",
+        ":python/pyfory/lib/mmh3/mmh3.so",
+        ":python/pyfory/format/_format.so",
+        ":python/pyfory/serialization.so",
     ],
     outs = [
-        "cp_fury_py_generated.out",
+        "cp_fory_py_generated.out",
     ],
     cmd = """
         set -e
@@ -108,15 +96,13 @@ genrule(
         u_name=`uname -s`
         if [ "$${u_name: 0: 4}" == "MING" ] || [ "$${u_name: 0: 4}" == "MSYS" ]
         then
-            cp -f $(location python/pyfury/_util.so) "$$WORK_DIR/python/pyfury/_util.pyd"
-            cp -f $(location python/pyfury/lib/mmh3/mmh3.so) "$$WORK_DIR/python/pyfury/lib/mmh3/mmh3.pyd"
-            cp -f $(location python/pyfury/format/_format.so) "$$WORK_DIR/python/pyfury/format/_format.pyd"
-            cp -f $(location python/pyfury/_serialization.so) "$$WORK_DIR/python/pyfury/_serialization.pyd"
+            cp -f $(location python/pyfory/lib/mmh3/mmh3.so) "$$WORK_DIR/python/pyfory/lib/mmh3/mmh3.pyd"
+            cp -f $(location python/pyfory/format/_format.so) "$$WORK_DIR/python/pyfory/format/_format.pyd"
+            cp -f $(location python/pyfory/serialization.so) "$$WORK_DIR/python/pyfory/serialization.pyd"
         else
-            cp -f $(location python/pyfury/_util.so) "$$WORK_DIR/python/pyfury"
-            cp -f $(location python/pyfury/lib/mmh3/mmh3.so) "$$WORK_DIR/python/pyfury/lib/mmh3"
-            cp -f $(location python/pyfury/format/_format.so) "$$WORK_DIR/python/pyfury/format"
-            cp -f $(location python/pyfury/_serialization.so) "$$WORK_DIR/python/pyfury"
+            cp -f $(location python/pyfory/lib/mmh3/mmh3.so) "$$WORK_DIR/python/pyfory/lib/mmh3"
+            cp -f $(location python/pyfory/format/_format.so) "$$WORK_DIR/python/pyfory/format"
+            cp -f $(location python/pyfory/serialization.so) "$$WORK_DIR/python/pyfory"
         fi
         echo $$(date) > $@
     """,

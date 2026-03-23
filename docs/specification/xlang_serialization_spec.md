@@ -1,7 +1,7 @@
 ---
-title: Fury Xlang Serialization Format
+title: Xlang Serialization Format
 sidebar_position: 0
-id: fury_xlang_serialization_spec
+id: xlang_serialization_spec
 license: |
   Licensed to the Apache Software Foundation (ASF) under one or more
   contributor license agreements.  See the NOTICE file distributed with
@@ -21,20 +21,16 @@ license: |
 
 ## Cross-language Serialization Specification
 
-> Format Version History:
->
-> - Version 0.1 - serialization spec formalized
+Apache Fory™ xlang serialization enables automatic cross-language object serialization with support for shared references, circular references, and polymorphism. Unlike traditional serialization frameworks that require IDL definitions and schema compilation, Fory serializes objects directly without any intermediate steps.
 
-Fury xlang serialization is an automatic object serialization framework that supports reference and polymorphism.
-Fury will convert an object from/to fury xlang serialization binary format.
-Fury has two core concepts for xlang serialization:
+Key characteristics:
 
-- **Fury xlang binary format**
-- **Framework implemented in different languages to convert object to/from Fury xlang binary format**
+- **Automatic**: No IDL definition, no schema compilation, no manual object-to-protocol conversion
+- **Cross-language**: Same binary format works seamlessly across Java, Python, C++, Rust, Go, JavaScript, and more
+- **Reference-aware**: Handles shared references and circular references without duplication or infinite recursion
+- **Polymorphic**: Supports object polymorphism with runtime type resolution
 
-The serialization format is a dynamic binary format. The dynamics and reference/polymorphism support make Fury flexible,
-much more easy to use, but
-also introduce more complexities compared to static serialization frameworks. So the format will be more complex.
+This specification defines the Fory xlang binary format. The format is dynamic rather than static, which enables flexibility and ease of use at the cost of additional complexity in the wire format.
 
 ## Type Systems
 
@@ -44,50 +40,62 @@ also introduce more complexities compared to static serialization frameworks. So
 - int8: a 8-bit signed integer.
 - int16: a 16-bit signed integer.
 - int32: a 32-bit signed integer.
-- var_int32: a 32-bit signed integer which use fury var_int32 encoding.
+- varint32: a 32-bit signed integer which use fory variable-length encoding.
 - int64: a 64-bit signed integer.
-- var_int64: a 64-bit signed integer which use fury PVL encoding.
-- sli_int64: a 64-bit signed integer which use fury SLI encoding.
+- varint64: a 64-bit signed integer which use fory PVL encoding.
+- tagged_int64: a 64-bit signed integer which use fory Hybrid encoding.
+- uint8: an 8-bit unsigned integer.
+- uint16: a 16-bit unsigned integer.
+- uint32: a 32-bit unsigned integer.
+- var_uint32: a 32-bit unsigned integer which use fory variable-length encoding.
+- uint64: a 64-bit unsigned integer.
+- var_uint64: a 64-bit unsigned integer which use fory PVL encoding.
+- tagged_uint64: a 64-bit unsigned integer which use fory Hybrid encoding.
+- float8: an 8-bit floating point number.
 - float16: a 16-bit floating point number.
+- bfloat16: a 16-bit brain floating point number.
 - float32: a 32-bit floating point number.
 - float64: a 64-bit floating point number including NaN and Infinity.
 - string: a text string encoded using Latin1/UTF16/UTF-8 encoding.
 - enum: a data type consisting of a set of named values. Rust enum with non-predefined field values are not supported as
   an enum.
 - named_enum: an enum whose value will be serialized as the registered name.
-- struct: a morphic(final) type serialized by Fury Struct serializer. i.e. it doesn't have subclasses. Suppose we're
-  deserializing `List<SomeClass>`, we can save dynamic serializer dispatch since `SomeClass` is morphic(final).
-- compatible_struct: a morphic(final) type serialized by Fury compatible Struct serializer.
+- struct: a dynamic(final) type serialized by Fory Struct serializer. i.e. it doesn't have subclasses. Suppose we're
+  deserializing `List<SomeClass>`, we can save dynamic serializer dispatch since `SomeClass` is dynamic(final).
+- compatible_struct: a dynamic(final) type serialized by Fory compatible Struct serializer.
 - named_struct: a `struct` whose type mapping will be encoded as a name.
 - named_compatible_struct: a `compatible_struct` whose type mapping will be encoded as a name.
 - ext: a type which will be serialized by a customized serializer.
 - named_ext: an `ext` type whose type mapping will be encoded as a name.
 - list: a sequence of objects.
 - set: an unordered set of unique elements.
-- map: a map of key-value pairs. Mutable types such as `list/map/set/array/tensor/arrow` are not allowed as key of map.
+- map: a map of key-value pairs. Mutable types such as `list/map/set/array` are not allowed as key of map.
 - duration: an absolute length of time, independent of any calendar/timezone, as a count of nanoseconds.
-- timestamp: a point in time, independent of any calendar/timezone, as a count of nanoseconds. The count is relative
-  to an epoch at UTC midnight on January 1, 1970.
-- local_date: a naive date without timezone. The count is days relative to an epoch at UTC midnight on Jan 1, 1970.
+- timestamp: a point in time, independent of any calendar/timezone, encoded as seconds (int64) and nanoseconds
+  (uint32) since the epoch at UTC midnight on January 1, 1970.
+- date: a naive date without timezone. The count is days relative to an epoch at UTC midnight on Jan 1, 1970.
 - decimal: exact decimal value represented as an integer value in two's complement.
 - binary: an variable-length array of bytes.
-- array: only allow numeric components. Other arrays will be taken as List. The implementation should support the
+- array: only allow 1d numeric components. Other arrays will be taken as List. The implementation should support the
   interoperability between array and list.
-- array: multidimensional array which every sub-array can have different sizes but all have same type.
-- bool_array: one dimensional int16 array.
-- int8_array: one dimensional int8 array.
-- int16_array: one dimensional int16 array.
-- int32_array: one dimensional int32 array.
-- int64_array: one dimensional int64 array.
-- float16_array: one dimensional half_float_16 array.
-- float32_array: one dimensional float32 array.
-- float64_array: one dimensional float64 array.
-- arrow record batch: an arrow [record batch](https://arrow.apache.org/docs/cpp/tables.html#record-batches) object.
-- arrow table: an arrow [table](https://arrow.apache.org/docs/cpp/tables.html#tables) object.
+  - bool_array: one dimensional bool array.
+  - int8_array: one dimensional int8 array.
+  - int16_array: one dimensional int16 array.
+  - int32_array: one dimensional int32 array.
+  - int64_array: one dimensional int64 array.
+  - float8_array: one dimensional float8 array.
+  - float16_array: one dimensional half_float_16 array.
+  - bfloat16_array: one dimensional bfloat16 array.
+  - float32_array: one dimensional float32 array.
+  - float64_array: one dimensional float64 array.
+- union: a tagged union type that can hold one of several alternative types. The active alternative is identified by an index.
+- typed_union: a union value with registered numeric union type ID.
+- named_union: a union value with embedded union type name or shared TypeDef.
+- none: represents an empty/unit value with no data (e.g., for empty union alternatives).
 
 Note:
 
-- Unsigned int/long are not added here, since not every language support those types.
+- Unsigned integer types use the same byte sizes as their signed counterparts; the difference is in value interpretation. See [Type mapping](xlang_type_mapping.md) for language-specific type mappings.
 
 ### Polymorphisms
 
@@ -101,7 +109,7 @@ to the field of struct.
 ### Type disambiguation
 
 Due to differences between type systems of languages, those types can't be mapped one-to-one between languages. When
-deserializing, Fury use the target data structure type and the data type in the data jointly to determine how to
+deserializing, Fory use the target data structure type and the data type in the data jointly to determine how to
 deserialize and populate the target data structure. For example:
 
 ```java
@@ -126,13 +134,13 @@ Users can also provide meta hints for fields of a type, or the type whole. Here 
 annotation to provide such information.
 
 ```java
-@FuryObject(fieldsNullable = false, trackingRef = false)
+@ForyObject(fieldsNullable = false, trackingRef = false)
 class Foo {
-  @FuryField(trackingRef = false)
+  @ForyField(trackingRef = false)
   int[] intArray;
-  @FuryField(polymorphic = true)
+  @ForyField(polymorphic = true)
   Object object;
-  @FuryField(tagId = 1, nullable = true)
+  @ForyField(tagId = 1, nullable = true)
   List<Object> objectList;
 }
 ```
@@ -146,249 +154,554 @@ Such information can be provided in other languages too:
 
 ### Type ID
 
-All internal data types are expressed using an ID in range `0~64`. Users can use `0~4096` for representing their
-types.
+All internal data types use an 8-bit internal ID (`0~255`, with `0~56` defined here). Users can
+register types by numeric ID (`0~0xFFFFFFFE` in current implementations). User IDs are encoded
+separately from the internal type ID; there is no bit shifting/packing.
+
+Named types (`NAMED_*`) do not embed a user ID; their names are carried in metadata instead.
+
+#### Internal Type ID Table
+
+| Type ID | Name                    | Description                                         |
+| ------- | ----------------------- | --------------------------------------------------- |
+| 0       | UNKNOWN                 | Unknown type, used for dynamic typing               |
+| 1       | BOOL                    | Boolean value                                       |
+| 2       | INT8                    | 8-bit signed integer                                |
+| 3       | INT16                   | 16-bit signed integer                               |
+| 4       | INT32                   | 32-bit signed integer                               |
+| 5       | VARINT32                | Variable-length encoded 32-bit signed integer       |
+| 6       | INT64                   | 64-bit signed integer                               |
+| 7       | VARINT64                | Variable-length encoded 64-bit signed integer       |
+| 8       | TAGGED_INT64            | Hybrid encoded 64-bit signed integer                |
+| 9       | UINT8                   | 8-bit unsigned integer                              |
+| 10      | UINT16                  | 16-bit unsigned integer                             |
+| 11      | UINT32                  | 32-bit unsigned integer                             |
+| 12      | VAR_UINT32              | Variable-length encoded 32-bit unsigned integer     |
+| 13      | UINT64                  | 64-bit unsigned integer                             |
+| 14      | VAR_UINT64              | Variable-length encoded 64-bit unsigned integer     |
+| 15      | TAGGED_UINT64           | Hybrid encoded 64-bit unsigned integer              |
+| 16      | FLOAT8                  | 8-bit floating point (float8)                       |
+| 17      | FLOAT16                 | 16-bit floating point (half precision)              |
+| 18      | BFLOAT16                | 16-bit brain floating point                         |
+| 19      | FLOAT32                 | 32-bit floating point (single precision)            |
+| 20      | FLOAT64                 | 64-bit floating point (double precision)            |
+| 21      | STRING                  | UTF-8/UTF-16/Latin1 encoded string                  |
+| 22      | LIST                    | Ordered collection (List, Array, Vector)            |
+| 23      | SET                     | Unordered collection of unique elements             |
+| 24      | MAP                     | Key-value mapping                                   |
+| 25      | ENUM                    | Enum registered by numeric ID                       |
+| 26      | NAMED_ENUM              | Enum registered by namespace + type name            |
+| 27      | STRUCT                  | Struct registered by numeric ID (schema consistent) |
+| 28      | COMPATIBLE_STRUCT       | Struct with schema evolution support (by ID)        |
+| 29      | NAMED_STRUCT            | Struct registered by namespace + type name          |
+| 30      | NAMED_COMPATIBLE_STRUCT | Struct with schema evolution (by name)              |
+| 31      | EXT                     | Extension type registered by numeric ID             |
+| 32      | NAMED_EXT               | Extension type registered by namespace + type name  |
+| 33      | UNION                   | Union value, schema identity not embedded           |
+| 34      | TYPED_UNION             | Union value with registered numeric type ID         |
+| 35      | NAMED_UNION             | Union value with embedded type name/TypeDef         |
+| 36      | NONE                    | Empty/unit type (no data)                           |
+| 37      | DURATION                | Time duration (seconds + nanoseconds)               |
+| 38      | TIMESTAMP               | Point in time (seconds + nanoseconds since epoch)   |
+| 39      | DATE                    | Date without timezone (days since epoch)            |
+| 40      | DECIMAL                 | Arbitrary precision decimal                         |
+| 41      | BINARY                  | Raw binary data                                     |
+| 42      | ARRAY                   | Generic array type                                  |
+| 43      | BOOL_ARRAY              | 1D boolean array                                    |
+| 44      | INT8_ARRAY              | 1D int8 array                                       |
+| 45      | INT16_ARRAY             | 1D int16 array                                      |
+| 46      | INT32_ARRAY             | 1D int32 array                                      |
+| 47      | INT64_ARRAY             | 1D int64 array                                      |
+| 48      | UINT8_ARRAY             | 1D uint8 array                                      |
+| 49      | UINT16_ARRAY            | 1D uint16 array                                     |
+| 50      | UINT32_ARRAY            | 1D uint32 array                                     |
+| 51      | UINT64_ARRAY            | 1D uint64 array                                     |
+| 52      | FLOAT8_ARRAY            | 1D float8 array                                     |
+| 53      | FLOAT16_ARRAY           | 1D float16 array                                    |
+| 54      | BFLOAT16_ARRAY          | 1D bfloat16 array                                   |
+| 55      | FLOAT32_ARRAY           | 1D float32 array                                    |
+| 56      | FLOAT64_ARRAY           | 1D float64 array                                    |
+
+#### Type ID Encoding for User Types
+
+When registering user types (struct/ext/enum/union), the internal type ID is written as the 8-bit
+kind. The user type ID is written separately as an unsigned varint32 (small7); there is no bit
+shift or packing.
+
+**Examples:**
+
+| User ID | Type              | Internal ID | Encoded User ID | Decimal |
+| ------- | ----------------- | ----------- | --------------- | ------- |
+| 0       | STRUCT            | 27          | 0               | 0       |
+| 0       | ENUM              | 25          | 0               | 0       |
+| 1       | STRUCT            | 27          | 1               | 1       |
+| 1       | COMPATIBLE_STRUCT | 28          | 1               | 1       |
+| 2       | NAMED_STRUCT      | 29          | 2               | 2       |
+
+When reading type IDs:
+
+- Read internal type ID from the type ID field.
+- If the internal type is a user-registered kind, read `user_type_id` as varuint32.
 
 ### Type mapping
 
-See [Type mapping](../guide/xlang_type_mapping.md)
+See [Type mapping](xlang_type_mapping.md)
 
 ## Spec overview
 
 Here is the overall format:
 
 ```
-| fury header | object ref meta | object type meta | object value data |
+| fory header | object ref meta | object type meta | object value data |
 ```
 
-The data are serialized using little endian byte order overall. If bytes swap is costly for some object,
-Fury will write the byte order for that object into the data instead of converting it to little endian.
+The data are serialized using little endian byte order for all types.
 
-## Fury header
+## Fory header
 
-Fury header consists starts one byte:
+Fory header format for xlang serialization:
 
 ```
-|    2 bytes   |     4 bits    | 1 bit | 1 bit | 1 bit  | 1 bit |   1 byte   |          optional 4 bytes          |
-+--------------+---------------+-------+-------+--------+-------+------------+------------------------------------+
-| magic number | reserved bits |  oob  | xlang | endian | null  |  language  | unsigned int for meta start offset |
+|        1 byte bitmap           |
++--------------------------------+
+|            flags               |
 ```
 
-- magic number: used to identify fury serialization protocol, current version use `0x62d4`.
-- null flag: 1 when object is null, 0 otherwise. If an object is null, other bits won't be set.
-- endian flag: 1 when data is encoded by little endian, 0 for big endian.
-- xlang flag: 1 when serialization uses xlang format, 0 when serialization uses Fury java format.
-- oob flag: 1 when passed `BufferCallback` is not null, 0 otherwise.
-- language: the language when serializing objects, such as JAVA, PYTHON, GO, etc. Fury can use this flag to determine whether spend more time on serialization to make the deserialization faster for dynamic languages.
+Detailed byte layout:
 
-If meta share mode is enabled, an uncompressed unsigned int is appended to indicate the start offset of metadata.
+```
+Byte 0:   Bitmap flags
+          - Bit 0: null flag (0x01)
+          - Bit 1: xlang flag (0x02)
+          - Bit 2: oob flag (0x04)
+          - Bits 3-7: reserved
+```
+
+- **null flag** (bit 0): 1 when object is null, 0 otherwise. If an object is null, only this flag is set.
+- **xlang flag** (bit 1): 1 when serialization uses Fory xlang format, 0 when serialization uses Fory language-native format.
+- **oob flag** (bit 2): 1 when out-of-band serialization is enabled (BufferCallback is not null), 0 otherwise.
+
+All data is encoded in little-endian format.
 
 ## Reference Meta
 
 Reference tracking handles whether the object is null, and whether to track reference for the object by writing
 corresponding flags and maintaining internal state.
 
-Reference flags:
+### Reference Flags
 
-| Flag                | Byte Value | Description                                                                                                                                             |
-|---------------------|------------|---------------------------------------------------------------------------------------------------------------------------------------------------------|
-| NULL FLAG           | `-3`       | This flag indicates the object is a null value. We don't use another byte to indicate REF, so that we can save one byte.                                |
-| REF FLAG            | `-2`       | This flag indicates the object is already serialized previously, and fury will write a ref id with unsigned varint format instead of serialize it again |
-| NOT_NULL VALUE FLAG | `-1`       | This flag indicates the object is a non-null value and fury doesn't track ref for this type of object.                                                  |
-| REF VALUE FLAG      | `0`        | This flag indicates the object is referencable and the first time to serialize.                                                                         |
+| Flag                | Byte Value (int8) | Hex    | Description                                                                                              |
+| ------------------- | ----------------- | ------ | -------------------------------------------------------------------------------------------------------- |
+| NULL FLAG           | `-3`              | `0xFD` | Object is null. No further bytes are written for this object.                                            |
+| REF FLAG            | `-2`              | `0xFE` | Object was already serialized. Followed by unsigned varint32 reference ID.                               |
+| NOT_NULL VALUE FLAG | `-1`              | `0xFF` | Object is non-null but reference tracking is disabled for this type. Object data follows immediately.    |
+| REF VALUE FLAG      | `0`               | `0x00` | Object is referencable and this is its first occurrence. Object data follows. Assigns next reference ID. |
 
-When reference tracking is disabled globally or for specific types, or for certain types within a particular
-context(e.g., a field of a type), only the `NULL` and `NOT_NULL VALUE` flags will be used for reference meta.
+### Reference Tracking Algorithm
 
-For languages which doesn't support reference such as rust, reference tracking must be disabled for correct
-deserialization by fury rust implementation.
+**Writing:**
 
-For languages whose object values are not null by default:
+```
+function write_ref_or_null(buffer, obj):
+    if obj is null:
+        buffer.write_int8(NULL_FLAG)      // -3
+        return true  // done, no more data to write
 
-- In rust, Fury takes `Option:None` as a null value
-- In c++, Fury takes `std::nullopt` as a null value
-- In golang, Fury takes `null interface/pointer` as a null value
+    if reference_tracking_enabled:
+        ref_id = lookup_written_objects(obj)
+        if ref_id exists:
+            buffer.write_int8(REF_FLAG)   // -2
+            buffer.write_varuint32(ref_id)
+            return true  // done, reference written
+        else:
+            buffer.write_int8(REF_VALUE_FLAG)  // 0
+            add_to_written_objects(obj, next_ref_id++)
+            return false  // continue to serialize object data
+    else:
+        buffer.write_int8(NOT_NULL_VALUE_FLAG)  // -1
+        return false  // continue to serialize object data
+```
 
-If one want to deserialize in languages like `Java/Python/JavaScript`, he should mark the type with all fields
-not-null by default, or using schema-evolution mode to carry the not-null fields info in the data.
+**Reading:**
+
+```
+function read_ref_or_null(buffer):
+    flag = buffer.read_int8()
+    switch flag:
+        case NULL_FLAG (-3):
+            return (null, true)  // null object, done
+        case REF_FLAG (-2):
+            ref_id = buffer.read_varuint32()
+            obj = get_from_read_objects(ref_id)
+            return (obj, true)  // referenced object, done
+        case NOT_NULL_VALUE_FLAG (-1):
+            return (null, false)  // non-null, continue reading
+        case REF_VALUE_FLAG (0):
+            reserve_ref_slot()  // will be filled after reading
+            return (null, false)  // non-null, continue reading
+```
+
+### Reference ID Assignment
+
+- Reference IDs are assigned sequentially starting from `0`
+- The ID is assigned when `REF_VALUE_FLAG` is written (first occurrence)
+- Objects are stored in a list/map indexed by their reference ID
+- For reading, a placeholder slot is reserved before deserializing the object, then filled after
+
+### When Reference Tracking is Disabled
+
+When reference tracking is disabled globally or for specific types, only the `NULL` and `NOT_NULL VALUE` flags
+will be used for reference meta. This reduces overhead for types that are known not to have references.
+
+### Language-Specific Considerations
+
+**Languages with nullable and reference types by default (Java, Python, JavaScript):**
+
+In xlang mode, for cross-language compatibility:
+
+- All fields are treated as **not-null** by default
+- Reference tracking is **disabled** by default
+- Users can explicitly mark fields as nullable or enable reference tracking via annotations
+- `Optional` types (e.g., `java.util.Optional`, `typing.Optional`) are treated as nullable
+
+**Annotation examples:**
+
+```java
+// Java: use @ForyField annotation
+public class MyClass {
+    @ForyField(nullable = true, ref = true)
+    private Object refField;
+
+    @ForyField(nullable = false)
+    private String requiredField;
+}
+```
+
+```python
+# Python: use typing with fory field descriptors
+from pyfory import Fory, ForyField
+
+class MyClass:
+    ref_field: ForyField(SomeType, nullable=True, ref=True)
+    required_field: ForyField(str, nullable=False)
+```
+
+**Languages with non-nullable types by default:**
+
+| Language | Null Representation       | Reference Tracking Support              |
+| -------- | ------------------------- | --------------------------------------- |
+| Rust     | `Option::None`            | Via `Rc<T>`, `Arc<T>`, `Weak<T>`        |
+| C++      | `std::nullopt`, `nullptr` | Via `std::shared_ptr<T>`, `weak_ptr<T>` |
+| Go       | `nil` interface/pointer   | Via pointer/interface types             |
+
+**Important:** For languages like Rust that don't have implicit reference semantics, reference tracking must use
+explicit smart pointers (`Rc`, `Arc`).
 
 ## Type Meta
 
-For every type to be serialized, it must be registered with an optional ID first. The registered type will have a
-user-provided or an auto-growing unsigned int i.e. `type_id`. The registration can be used for security check and type
-identification. The id of user registered type will be added by `64` to make space for Fury internal data types.
+Every non-primitive value begins with a type ID that identifies its concrete type. The type ID is
+followed by optional type-specific metadata.
 
-Depending on whether meta share mode and registration is enabled for current type, Fury will write type meta
-differently.
+### Type ID encoding
 
-### Schema consistent
+- The type ID is written as an unsigned varint32 (small7).
+- Internal types use their internal type ID directly (low 8 bits).
+- User-registered types write the internal type ID, then write `user_type_id` as varuint32.
+  - `user_type_id` is a numeric ID (0~0xFFFFFFFE in current implementations).
+  - `internal_type_id` is one of `ENUM`, `STRUCT`, `COMPATIBLE_STRUCT`, `EXT`, or `TYPED_UNION`.
+- Named types do not embed a user ID. They use `NAMED_*` internal type IDs and carry a namespace
+  and type name (or shared TypeDef) instead.
 
-- If schema consistent mode is enabled globally when creating fury, type meta will be written as a fury unsigned varint
-  of `type_id`. Schema evolution related meta will be ignored.
-- If schema evolution mode is enabled globally when creating fury, and current class is configured to use schema
-  consistent mode like `struct` vs `table` in flatbuffers:
-  - Type meta will be add to `captured_type_defs`: `captured_type_defs[type def stub] = map size` ahead when
-      registering type.
-  - Get index of the meta in `captured_type_defs`, write that index as `| unsigned varint: index |`.
+### Type meta payload
 
-### Schema evolution
+After the type ID:
 
-If schema evolution mode is enabled globally when creating fury, and enabled for current type, type meta will be written
-using one of the following mode. Which mode to use is configured when creating fury.
+- **ENUM / STRUCT / EXT / TYPED_UNION**: no extra bytes beyond the `user_type_id` (registration by ID required on both sides).
+- **COMPATIBLE_STRUCT**:
+  - If meta share is enabled, write a shared TypeDef entry (see below).
+  - If meta share is disabled, no extra bytes.
+- **NAMED_ENUM / NAMED_STRUCT / NAMED_COMPATIBLE_STRUCT / NAMED_EXT / NAMED_UNION**:
+  - If meta share is disabled, write `namespace` and `type_name` as meta strings.
+  - If meta share is enabled, write a shared TypeDef entry (see below).
+- **UNION**: no extra bytes at this layer.
+- **LIST / SET / MAP / ARRAY / primitives**: no extra bytes at this layer.
 
-- Normal mode(meta share not enabled):
-  - If type meta hasn't been written before, add `type def`
-      to `captured_type_defs`: `captured_type_defs[type def] = map size`.
-  - Get index of the meta in `captured_type_defs`, write that index as `| unsigned varint: index |`.
-  - After finished the serialization of the object graph, fury will start to write `captured_type_defs`:
-    - Firstly, set current to `meta start offset` of fury header
-    - Then write `captured_type_defs` one by one:
+Unregistered types are serialized as named types:
 
-      ```python
-      buffer.write_var_uint32(len(writting_type_defs) - len(schema_consistent_type_def_stubs))
-      for type_meta in writting_type_defs:
-          if not type_meta.is_stub():
-              type_meta.write_type_def(buffer)
-      writing_type_defs = copy(schema_consistent_type_def_stubs)
-      ```
+- Enums -> `NAMED_ENUM`
+- Struct-like classes -> `NAMED_STRUCT` (or `NAMED_COMPATIBLE_STRUCT` when meta share is enabled)
+- Custom extension types -> `NAMED_EXT`
+- Unions -> `NAMED_UNION`
 
-- Meta share mode: the writing steps are same as the normal mode, but `captured_type_defs` will be shared across
-  multiple serializations of different objects. For example, suppose we have a batch to serialize:
+The namespace is the package/module name and the type name is the simple class name.
 
-    ```python
-    captured_type_defs = {}
-    stream = ...
-    # add `Type1` to `captured_type_defs` and write `Type1`
-    fury.serialize(stream, [Type1()])
-    # add `Type2` to `captured_type_defs` and write `Type2`, `Type1` is written before.
-    fury.serialize(stream, [Type1(), Type2()])
-    # `Type1` and `Type2` are written before, no need to write meta.
-    fury.serialize(stream, [Type1(), Type2()])
-    ```
+### Shared Type Meta (streaming)
 
-- Streaming mode(streaming mode doesn't support meta share):
-  - If type meta hasn't been written before, the data will be written as:
+When meta share is enabled, TypeDef metadata is written inline the first time a type is
+encountered, and subsequent occurrences only reference it.
 
-      ```
-      | unsigned varint: 0b11111111 | type def |
-      ```
+Encoding:
 
-  - If type meta has been written before, the data will be written as:
+- `marker = (index << 1) | flag`
+- `flag = 0`: new type definition follows
+- `flag = 1`: reference to a previously written type definition
+- `index` is the sequential index assigned to this type (starting from 0).
 
-      ```
-      | unsigned varint: written index << 1 |
-      ```
+Write algorithm:
 
-      `written index` is the id in `captured_type_defs`.
-  - With this mode, `meta start offset` can be omitted.
+1. Look up the class in the per-stream meta context map.
+2. If found, write `(index << 1) | 1`.
+3. If not found:
+   - assign `index = next_id`
+   - write `(index << 1)`
+   - write the encoded TypeDef bytes immediately after
 
-> The normal mode and meta share mode will forbid streaming writing since it needs to look back for update the start
-> offset after the whole object graph writing and meta collecting is finished. Only in this way we can ensure
-> deserialization failure in meta share mode doesn't lost shared meta.
+Read algorithm:
 
-#### Type Def
+1. Read `marker` as varuint32.
+2. `flag = marker & 1`, `index = marker >>> 1`.
+3. If `flag == 1`, use the cached TypeDef at `index`.
+4. If `flag == 0`, read a TypeDef, cache it at `index`, and use it.
 
-Here we mainly describe the meta layout for schema evolution mode:
+TypeDef bytes include the 8-byte global header and optional size extension.
+
+### TypeDef (schema evolution metadata)
+
+TypeDef describes a struct-like type (or a named enum/ext) for schema evolution and name
+resolution. It is encoded as:
 
 ```
-|      8 bytes meta header      |   variable bytes   |  variable bytes   | variable bytes |
-+-------------------------------+--------------------+-------------------+----------------+
-| 7 bytes hash + 1 bytes header |  current type meta |  parent type meta |      ...       |
+|    8-byte global header   | [optional size varuint] | TypeDef body |
 ```
 
-Type meta are encoded from parent type to leaf type, only type with serializable fields will be encoded.
+#### Global header
 
-##### Meta header
+The 8-byte header is a little-endian uint64:
 
-Meta header is a 64 bits number value encoded in little endian order.
+- Low 8 bits: meta size (number of bytes in the TypeDef body).
+  - If meta size >= 0xFF, the low 8 bits are set to 0xFF and an extra
+    `varuint32(meta_size - 0xFF)` follows immediately after the header.
+- Bit 8: `HAS_FIELDS_META` (1 = fields metadata present).
+- Bit 9: `COMPRESS_META` (1 = body is compressed; decompress before parsing).
+- Bits 10-13: reserved for future extension (must be zero).
+- High 50 bits: hash of the TypeDef body.
 
-- Lowest 4 digits `0b0000~0b1110` are used to record num classes. `0b1111` is preserved to indicate that Fury need to
-  read more bytes for length using Fury unsigned int encoding. If current type doesn't has parent type, or parent
-  type doesn't have fields to serialize, or we're in a context which serialize fields of current type
-  only, num classes will be 1.
-- The 5th bit is used to indicate whether this type needs schema evolution.
-- Other 56 bits are used to store the unique hash of `flags + all layers type meta`.
+#### TypeDef body
 
-##### Single layer type meta
+TypeDef body has a single layer (fields are flattened in class hierarchy order):
 
 ```
-| unsigned varint | var uint |  field info: variable bytes   | variable bytes  | ... |
-+-----------------+----------+-------------------------------+-----------------+-----+
-|   num_fields    | type id  | header + type id + field name | next field info | ... |
+| meta header (1 byte) | type spec | field info ... |
 ```
 
-- num fields: encode `num fields` as unsigned varint.
-  - If the current type is schema consistent, then num_fields will be `0` to flag it.
-  - If the current type isn't schema consistent, then num_fields will be the number of compatible fields. For example,
-      users can use tag id to mark some fields as compatible fields in schema consistent context. In such cases, schema
-      consistent fields will be serialized first, then compatible fields will be serialized next. At deserialization,
-      Fury will use fields info of those fields which aren't annotated by tag id for deserializing schema consistent
-      fields, then use fields info in meta for deserializing compatible fields.
-- type id: the registered id for the current type, which will be written as an unsigned varint.
-- field info:
-  - header(8
-      bits): `4 bits size + 2 bits field name encoding + nullability flag + ref tracking flag`.
-      Users can use annotation to provide those info.
-    - 2 bits field name encoding:
-      - encoding: `UTF8/ALL_TO_LOWER_SPECIAL/LOWER_UPPER_DIGIT_SPECIAL/TAG_ID`
-      - If tag id is used, i.e. field name is written by an unsigned varint tag id. 2 bits encoding will be `11`.
-    - size of field name:
-      - The `4 bits size: 0~14`  will be used to indicate length `1~15`, the value `15` indicates to read more bytes,
-              the encoding will encode `size - 15` as a varint next.
-      - If encoding is `TAG_ID`, then num_bytes of field name will be used to store tag id.
-    - ref tracking: when set to 1, ref tracking will be enabled for this field.
-    - nullability: when set to 1, this field can be null.
-  - field name: If tag id is set, tag id will be used instead. Otherwise meta string encoding `[length]` and data will
-      be written instead.
-  - type id:
-    - Format: `id << 1 | polymorphic flag`. If field type is polymorphic, this flag is set to `0b1`, otherwise it's
-      `0b0`
-    - For registered type-consistent classes, it will be the registered type id.
-    - For struct type it will be written as `STRUCT`.
-    - The meta for struct type is written separately instead of inlining here is to reduce meta space cost if object of
-      this type is serialized in current object graph multiple times, and the field value may be null too.
-    - For enum type, it will be written as `ENUM`.
-    - For collection type, it will be written as `COLLECTION`, then write element type recursively.
-    - For map type, it will be written as `MAP`, then write key and value type recursively.
+Meta header byte:
 
-Field order are left as implementation details, which is not exposed to specification, the deserialization need to
-resort fields based on Fury field comparator. In this way, fury can compute statistics for field names or types and
-using a more compact encoding.
+- Bits 0-4: `num_fields` (0-30).
+  - If `num_fields == 31`, read an extra `varuint32` and add it.
+- Bit 5: `REGISTER_BY_NAME` (1 = namespace + type name, 0 = numeric type ID).
+- Bits 6-7: reserved.
 
-##### Other layers type meta
+Type spec:
 
-Same encoding algorithm as the previous layer.
+- If `REGISTER_BY_NAME` is set:
+  - `namespace` meta string
+  - `type_name` meta string
+- Otherwise:
+  - `type_id` as `varuint32` (small7)
+
+Field info list:
+
+Each field is encoded as:
+
+```
+| field header (1 byte) | field type info | [field name bytes] |
+```
+
+Field header layout:
+
+- Bits 6-7: field name encoding (`UTF8`, `ALL_TO_LOWER_SPECIAL`,
+  `LOWER_UPPER_DIGIT_SPECIAL`, or `TAG_ID`)
+- Bits 2-5: size
+  - For name encoding: `size = (name_bytes_length - 1)`
+  - For tag ID: `size = tag_id`
+  - If `size == 0b1111`, read `varuint32(size - 15)` and add it
+- Bit 1: nullable flag
+- Bit 0: reference tracking flag
+
+Field type info:
+
+- The top-level field type is written as `varuint32(type_id)` (small7) without flags.
+- For `LIST` / `SET`, an element type follows, encoded as
+  `(nested_type_id << 2) | (nullable << 1) | tracking_ref`.
+- For `MAP`, key type and value type follow, both encoded the same way.
+- One-dimensional primitive arrays use `*_ARRAY` type IDs; other arrays are encoded as `LIST`.
+
+Field names:
+
+- If `TAG_ID` encoding is used, no name bytes are written.
+- Otherwise, write the encoded field name bytes as a meta string.
+- For xlang, field names are converted to `snake_case` before encoding for
+  cross-language compatibility.
+
+Field order:
+
+Field order is implementation-defined. Decoders must match fields by name or tag ID rather than
+position. Fory uses a stable grouping and sorting order to produce deterministic TypeDefs.
 
 ## Meta String
 
-Meta string is mainly used to encode meta strings such as field names.
+Meta string is a compressed encoding for metadata strings such as field names, type names, and namespaces.
+This compression significantly reduces the size of type metadata in serialized data.
+
+### Encoding Type IDs
+
+| ID  | Name                      | Bits/Char | Character Set                        |
+| --- | ------------------------- | --------- | ------------------------------------ |
+| 0   | UTF8                      | 8         | Any UTF-8 character                  |
+| 1   | LOWER_SPECIAL             | 5         | `a-z . _ $ \|`                       |
+| 2   | LOWER_UPPER_DIGIT_SPECIAL | 6         | `a-z A-Z 0-9 . _`                    |
+| 3   | FIRST_TO_LOWER_SPECIAL    | 5         | First char uppercase, rest `a-z . _` |
+| 4   | ALL_TO_LOWER_SPECIAL      | 5         | `a-z A-Z . _` (uppercase escaped)    |
+
+### Character Mapping Tables
+
+#### LOWER_SPECIAL (5 bits per character)
+
+| Character | Code (binary) | Code (decimal) |
+| --------- | ------------- | -------------- |
+| a-z       | 00000-11001   | 0-25           |
+| .         | 11010         | 26             |
+| \_        | 11011         | 27             |
+| $         | 11100         | 28             |
+| \|        | 11101         | 29             |
+
+**Note:** The `|` character is used as an escape sequence in ALL_TO_LOWER_SPECIAL encoding.
+
+#### LOWER_UPPER_DIGIT_SPECIAL (6 bits per character)
+
+| Character | Code (binary) | Code (decimal) |
+| --------- | ------------- | -------------- |
+| a-z       | 000000-011001 | 0-25           |
+| A-Z       | 011010-110011 | 26-51          |
+| 0-9       | 110100-111101 | 52-61          |
+| .         | 111110        | 62             |
+| \_        | 111111        | 63             |
 
 ### Encoding Algorithms
 
-String binary encoding algorithm:
+#### LOWER_SPECIAL Encoding
 
-| Algorithm                 | Pattern       | Description                                                                                                                                                                                                                                                                              |
-|---------------------------|---------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| LOWER_SPECIAL             | `a-z._$\|`    | every char is written using 5 bits, `a-z`: `0b00000~0b11001`, `._$\|`: `0b11010~0b11101`, prepend one bit at the start to indicate whether strip last char since last byte may have 7 redundant bits(1 indicates strip last char)                                                        |
-| LOWER_UPPER_DIGIT_SPECIAL | `a-zA-Z0~9._` | every char is written using 6 bits, `a-z`: `0b00000~0b11001`, `A-Z`: `0b11010~0b110011`, `0~9`: `0b110100~0b111101`, `._`: `0b111110~0b111111`,  prepend one bit at the start to indicate whether strip last char since last byte may have 7 redundant bits(1 indicates strip last char) |
-| UTF-8                     | any chars     | UTF-8 encoding                                                                                                                                                                                                                                                                           |
+For strings containing only `a-z`, `.`, `_`, `$`, `|`:
 
-Encoding flags:
+```
+function encode_lower_special(str):
+    bits = []
+    for char in str:
+        bits.append(lookup_lower_special[char])  // 5 bits each
 
-| Encoding Flag             | Pattern                                                  | Encoding Algorithm                                                                                                                                          |
-|---------------------------|----------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| LOWER_SPECIAL             | every char is in `a-z._\|`                               | `LOWER_SPECIAL`                                                                                                                                             |
-| FIRST_TO_LOWER_SPECIAL    | every char is in `a-z._` except first char is upper case | replace first upper case char to lower case, then use `LOWER_SPECIAL`                                                                                       |
-| ALL_TO_LOWER_SPECIAL      | every char is in `a-zA-Z._`                              | replace every upper case char by `\|` + `lower case`, then use `LOWER_SPECIAL`, use this encoding if it's smaller than Encoding `LOWER_UPPER_DIGIT_SPECIAL` |
-| LOWER_UPPER_DIGIT_SPECIAL | every char is in `a-zA-Z._`                              | use `LOWER_UPPER_DIGIT_SPECIAL` encoding if it's smaller than Encoding `FIRST_TO_LOWER_SPECIAL`                                                             |
-| UTF8                      | any utf-8 char                                           | use `UTF-8` encoding                                                                                                                                        |
-| Compression               | any utf-8 char                                           | lossless compression                                                                                                                                        |
+    // Pad to byte boundary
+    total_bits = len(str) * 5
+    padding_bits = (8 - (total_bits % 8)) % 8
 
-Notes:
+    // First bit indicates if last char should be stripped (due to padding)
+    strip_last = (padding_bits >= 5)
+    if strip_last:
+        prepend bit 1
+    else:
+        prepend bit 0
 
-- Depending on cases, one can choose encoding `flags + data` jointly, uses 3 bits of first byte for flags and other
-  bytes
-  for data.
+    return pack_bits_to_bytes(bits)
+```
+
+#### FIRST_TO_LOWER_SPECIAL Encoding
+
+For strings like `MyFieldName` where only the first character is uppercase:
+
+```
+function encode_first_to_lower_special(str):
+    // Convert first char to lowercase
+    modified = str[0].lower() + str[1:]
+    // Then use LOWER_SPECIAL encoding
+    return encode_lower_special(modified)
+```
+
+#### ALL_TO_LOWER_SPECIAL Encoding
+
+For strings with multiple uppercase characters like `MyTypeName`:
+
+```
+function encode_all_to_lower_special(str):
+    result = ""
+    for char in str:
+        if char.is_upper():
+            result += "|" + char.lower()  // Escape uppercase with |
+        else:
+            result += char
+    return encode_lower_special(result)
+```
+
+Example: `MyType` → `|my|type` → encoded with LOWER_SPECIAL
+
+### Encoding Selection Algorithm
+
+```
+function choose_encoding(str):
+    if all chars in str are in [a-z . _ $ |]:
+        return LOWER_SPECIAL
+
+    if first char is uppercase AND rest are in [a-z . _]:
+        return FIRST_TO_LOWER_SPECIAL
+
+    if all chars are in [a-z A-Z . _]:
+        lower_special_size = encode_all_to_lower_special(str).size
+        luds_size = encode_lower_upper_digit_special(str).size
+        if lower_special_size <= luds_size:
+            return ALL_TO_LOWER_SPECIAL
+        else:
+            return LOWER_UPPER_DIGIT_SPECIAL
+
+    if all chars are in [a-z A-Z 0-9 . _]:
+        return LOWER_UPPER_DIGIT_SPECIAL
+
+    return UTF8
+```
+
+### Meta String Header Format
+
+Meta strings are written with a header that includes the encoding type:
+
+```
+| 3 bits encoding | 5+ bits length | encoded bytes |
+```
+
+Or for larger strings:
+
+```
+| varuint: (length << 3) | encoding | encoded bytes |
+```
+
+### Special Character Sets by Context
+
+Different contexts use different special characters:
+
+| Context    | Special Chars | Notes                              |
+| ---------- | ------------- | ---------------------------------- |
+| Field Name | . \_ $ \|     | $ for inner classes, \| for escape |
+| Namespace  | . \_          | Package/module separators          |
+| Type Name  | $ \_          | $ for inner classes in Java        |
+
+### Deduplication
+
+Meta strings are deduplicated within a serialization session:
+
+```
+First occurrence:  | (length << 1) | [hash if large] | encoding | bytes |
+Reference:         | ((id + 1) << 1) | 1 |
+```
+
+- Bit 0 of the header indicates: 0 = new string, 1 = reference to previous
+- Large strings (> 16 bytes) include 64-bit hash for content-based deduplication
+- Small strings use exact byte comparison
 
 ## Value Format
 
@@ -416,51 +729,211 @@ Notes:
 
 #### unsigned varint32
 
-- size: 1~5 byte
-- Format: The most significant bit (MSB) in every byte indicates whether to have the next byte. If first bit is set
-  i.e. `b & 0x80 == 0x80`, then
-  the next byte should be read until the first bit of the next byte is unset.
+- size: 1~5 bytes
+- Format: The most significant bit (MSB) in every byte indicates whether to have the next byte. If the continuation
+  bit is set (i.e. `b & 0x80 == 0x80`), then the next byte should be read until a byte with unset continuation bit.
+
+**Encoding Algorithm:**
+
+```
+function write_varuint32(value):
+    while value >= 0x80:
+        buffer.write_byte((value & 0x7F) | 0x80)  // 7 bits of data + continuation bit
+        value = value >> 7
+    buffer.write_byte(value)  // final byte without continuation bit
+```
+
+**Decoding Algorithm:**
+
+```
+function read_varuint32():
+    result = 0
+    shift = 0
+    while true:
+        byte = buffer.read_byte()
+        result = result | ((byte & 0x7F) << shift)
+        if (byte & 0x80) == 0:
+            break
+        shift = shift + 7
+    return result
+```
+
+**Byte sizes by value range:**
+
+| Value Range            | Bytes |
+| ---------------------- | ----- |
+| 0 ~ 127                | 1     |
+| 128 ~ 16383            | 2     |
+| 16384 ~ 2097151        | 3     |
+| 2097152 ~ 268435455    | 4     |
+| 268435456 ~ 4294967295 | 5     |
 
 #### signed int32
 
-- size: 4 byte
+- size: 4 bytes
 - byte order: raw bytes of little endian order
 
 #### signed varint32
 
-- size: 1~5 byte
-- Format: First convert the number into positive unsigned int by `(v << 1) ^ (v >> 31)` ZigZag algorithm, then encode
-  it as an unsigned varint.
+- size: 1~5 bytes
+- Format: First convert the number into positive unsigned int using ZigZag encoding, then encode as unsigned varint.
+
+**ZigZag Encoding:**
+
+```
+// Encode: convert signed to unsigned
+zigzag_value = (value << 1) ^ (value >> 31)
+
+// Decode: convert unsigned back to signed
+original = (zigzag_value >> 1) ^ (-(zigzag_value & 1))
+// Or equivalently:
+original = (zigzag_value >> 1) ^ (~(zigzag_value & 1) + 1)
+```
+
+ZigZag encoding maps signed integers to unsigned integers so that small absolute values (positive or negative)
+have small encoded values:
+
+| Original | ZigZag Encoded |
+| -------- | -------------- |
+| 0        | 0              |
+| -1       | 1              |
+| 1        | 2              |
+| -2       | 3              |
+| 2        | 4              |
+| ...      | ...            |
 
 #### unsigned int64
 
-- size: 8 byte
+- size: 8 bytes
 - byte order: raw bytes of little endian order
 
 #### unsigned varint64
 
-- size: 1~9 byte
-- Fury SLI(Small long as int) Encoding:
-  - If long is in `[0, 2147483647]`, encode as 4 bytes int: `| little-endian: ((int) value) << 1 |`
-  - Otherwise write as 9 bytes: `| 0b1 | little-endian 8 bytes long |`
-- Fury PVL(Progressive Variable-length Long) Encoding:
-  - positive long format: first bit in every byte indicates whether to have the next byte. If first bit is set
-      i.e. `b & 0x80 == 0x80`, then the next byte should be read until the first bit is unset.
+- size: 1~9 bytes
+
+Uses PVL (Progressive Variable-Length) encoding:
+
+```
+function write_varuint64(value):
+    while value >= 0x80:
+        buffer.write_byte((value & 0x7F) | 0x80)
+        value = value >> 7
+    buffer.write_byte(value)
+```
+
+| Value Range   | Bytes |
+| ------------- | ----- |
+| 0 ~ 127       | 1     |
+| 128 ~ 16383   | 2     |
+| ...           | ...   |
+| 2^56 ~ 2^63-1 | 9     |
+
+#### unsigned hybrid int64 (TAGGED_UINT64)
+
+- size: 4 or 9 bytes
+
+Optimized for unsigned values that fit in 31 bits (common case for IDs, sizes, counts, etc.):
+
+```
+if value in [0, 2147483647]:  // fits in 31 bits (2^31 - 1), full unsigned range
+    write 4 bytes: ((int32) value) << 1  // bit 0 is 0, indicating 4-byte encoding
+else:
+    write 1 byte:  0x01                  // bit 0 is 1, indicating 9-byte encoding
+    write 8 bytes: value as little-endian uint64
+```
+
+Reading:
+
+```
+first_int32 = read_int32_le()
+if (first_int32 & 1) == 0:
+    return (uint64)(first_int32 >> 1)  // 4-byte encoding, unsigned
+else:
+    return read_uint64_le()            // read remaining 8 bytes
+```
+
+Note: TAGGED_UINT64 uses the full 31 bits for positive values [0, 2^31-1], compared to TAGGED_INT64 which splits the range for signed values [-2^30, 2^30-1].
+
+#### VarUint36Small
+
+A specialized encoding used for string headers that combines size (up to 36 bits) with encoding flags:
+
+```
+// Write: encodes (size << 2) | encoding_flags
+function write_varuint36_small(value):
+    if value < 0x80:
+        buffer.write_byte(value)
+    else:
+        // Standard varint encoding for values >= 128
+        write_varuint64(value)
+```
+
+This encoding is optimized for the common case where string length fits in 7 bits (strings < 32 characters).
 
 #### signed int64
 
-- size: 8 byte
+- size: 8 bytes
 - byte order: raw bytes of little endian order
 
 #### signed varint64
 
-- size: 1~9 byte
-- Fury SLI(Small long as int) Encoding:
-  - If long is in `[-1073741824, 1073741823]`, encode as 4 bytes int: `| little-endian: ((int) value) << 1 |`
-  - Otherwise write as 9 bytes: `| 0b1 | little-endian 8 bytes long |`
-- Fury PVL(Progressive Variable-length Long) Encoding:
-  - First convert the number into positive unsigned long by `(v << 1) ^ (v >> 63)` ZigZag algorithm to reduce cost of
-      small negative numbers, then encoding it as an unsigned long.
+- size: 1~9 bytes
+
+Uses ZigZag encoding first, then PVL varint:
+
+```
+// Encode
+zigzag_value = (value << 1) ^ (value >> 63)
+write_varuint64(zigzag_value)
+
+// Decode
+zigzag_value = read_varuint64()
+value = (zigzag_value >> 1) ^ (-(zigzag_value & 1))
+```
+
+#### signed hybrid int64 (TAGGED_INT64)
+
+- size: 4 or 9 bytes
+
+Optimized for small signed values:
+
+```
+if value in [-1073741824, 1073741823]:  // fits in 30 bits + sign ([-2^30, 2^30-1])
+    write 4 bytes: ((int32) value) << 1  // bit 0 is 0, indicating 4-byte encoding
+else:
+    write 1 byte:  0x01                  // bit 0 is 1, indicating 9-byte encoding
+    write 8 bytes: value as little-endian int64
+```
+
+Reading:
+
+```
+first_int32 = read_int32_le()
+if (first_int32 & 1) == 0:
+    return (int64)(first_int32 >> 1)  // 4-byte encoding, sign-extended
+else:
+    return read_int64_le()            // read remaining 8 bytes
+```
+
+Note: TAGGED_INT64 uses 30 bits + sign for values [-2^30, 2^30-1], while TAGGED_UINT64 uses full 31 bits for unsigned values [0, 2^31-1].
+
+#### float8
+
+- size: 1 byte
+- format:
+  - float8 has 4 kinds: float8 kind enum: float8_e4m3fn, float8_e4m3fnuz, float8_e5m2, float8_e5m2fnuz
+  - when serialize as field, write raw 8 bits as one byte directly
+  - when serialize as an object: write type kind as a byte, then write value byte
+
+#### float16
+
+- size: 2 bytes
+- format: encode the specified floating-point value according to the IEEE 754 standard binary16 format, preserving NaN values, then write as binary by little endian order.
+
+#### bfloat16
+
+- size: 2 bytes
+- format: encode the specified floating-point value according to the IEEE 754 standard bfloat16 format, preserving NaN values, then write as binary by little endian order.
 
 #### float32
 
@@ -479,59 +952,149 @@ Notes:
 Format:
 
 ```
-| unsigned varint64: size << 2 `bitor` 2 bits encoding flags | binary data |
+| varuint36_small: (size << 2) | encoding | binary data |
 ```
 
-- `size + encoding` will be concat as a long and encoded as an unsigned varint64. The little 2 bits is used for
-  encoding:
-  0 for `latin1(ISO-8859-1)`, 1 for `utf-16`, 2 for `utf-8`.
-- encoded string binary data based on encoding: `latin/utf-16/utf-8`.
+#### String Header
 
-Which encoding to choose:
+The header is encoded using `varuint36_small` format, which combines the byte length and encoding type:
 
-- For JDK8: fury detect `latin` at runtime, if string is `latin` string, then use `latin` encoding, otherwise
-  use `utf-16`.
-- For JDK9+: fury use `coder` in `String` object for encoding, `latin`/`utf-16` will be used for encoding.
-- If the string is encoded by `utf-8`, then fury will use `utf-8` to decode the data. Cross-language string
-  serialization of fury uses `utf-8` by default.
+```
+header = (byte_length << 2) | encoding_type
+```
 
-### list
+| Encoding Type | Value | Description                             |
+| ------------- | ----- | --------------------------------------- |
+| LATIN1        | 0     | ISO-8859-1 single-byte encoding         |
+| UTF16         | 1     | UTF-16 encoding (2 bytes per code unit) |
+| UTF8          | 2     | UTF-8 variable-length encoding          |
+| Reserved      | 3     | Reserved for future use                 |
+
+#### Encoding Algorithm
+
+**Writing:**
+
+```
+function write_string(str):
+    bytes = encode_to_bytes(str, chosen_encoding)
+    header = (bytes.length << 2) | encoding_type
+    buffer.write_varuint36_small(header)
+    buffer.write_bytes(bytes)
+```
+
+**Reading:**
+
+```
+function read_string():
+    header = buffer.read_varuint36_small()
+    encoding = header & 0x03
+    byte_length = header >> 2
+    bytes = buffer.read_bytes(byte_length)
+    return decode_bytes(bytes, encoding)
+```
+
+#### Encoding Selection by Language
+
+**Writing:**
+
+| Language     | Encoding Strategy                                        |
+| ------------ | -------------------------------------------------------- |
+| Java (JDK8)  | Detect at runtime: LATIN1 if all chars < 256, else UTF16 |
+| Java (JDK9+) | Use String's internal coder: LATIN1 or UTF16             |
+| Python       | Can write LATIN1, UTF16, or UTF8 based on string content |
+| C++          | UTF8 (`std::string`) or UTF16 (`std::u16string`)         |
+| Rust         | UTF8 (`String`)                                          |
+| Go           | UTF8 (`string`)                                          |
+| JavaScript   | UTF8                                                     |
+
+**Reading:** All languages support decoding all three encodings (LATIN1, UTF16, UTF8).
+
+**Recommendation:** Select encoding based on maximum performance - use the encoding that matches the language's native string representation to avoid conversion overhead.
+
+#### Empty String
+
+Empty strings are encoded with header `0` (length 0, any encoding) followed by no data bytes.
+
+### duration
+
+Duration is an absolute length of time, independent of any calendar/timezone, as a count of seconds and nanoseconds.
 
 Format:
 
 ```
-| unsigned varint64: length << 4 `bitor` 4 bits elements header | elements data |
+| signed varint64: seconds | signed int32: nanoseconds |
 ```
 
-#### elements header
+- `seconds`: Number of seconds in the duration, encoded as a signed varint64. Can be positive or negative.
+- `nanoseconds`: Nanosecond adjustment to the duration, encoded as a signed int32. Value range is [0, 999,999,999] for positive durations, and [-999,999,999, 0] for negative durations.
 
-In most cases, all elements are same type and not null, elements header will encode those homogeneous
-information to avoid the cost of writing it for every element. Specifically, there are four kinds of information
-which will be encoded by elements header, each use one bit:
+Notes:
 
-- If track elements ref, use the first bit `0b1` of the header to flag it.
-- If the elements have null, use the second bit `0b10` of the header to flag it. If ref tracking is enabled for this
-  element type, this flag is invalid.
-- If the element types are not the declared type, use the 3rd bit `0b100` of the header to flag it.
-- If the element types are different, use the 4rd bit `0b1000` header to flag it.
+- The duration is stored as two separate fields to maintain precision and avoid overflow issues.
+- Seconds are encoded using varint64 for compact representation of common duration values.
+- Nanoseconds are stored as a fixed int32 since the range is limited.
+- The sign of the duration is determined by the seconds field. When seconds is 0, the sign is determined by nanoseconds.
 
-By default, all bits are unset, which means all elements won't track ref, all elements are same type, not null and
-the actual element is the declared type in the custom type field.
+### collection/list
 
-The implementation can generate different deserialization code based read header, and look up the generated code from
-a linear map/list.
+Format:
+
+```
+| varuint32: length | 1 byte elements header | [optional type info] | elements data |
+```
+
+#### Elements Header
+
+The elements header is a single byte that encodes metadata about the collection elements to optimize serialization:
+
+```
+| bit 7-4 (reserved) |    bit 3    |      bit 2       |   bit 1  |   bit 0   |
++--------------------+-------------+------------------+----------+-----------+
+|      reserved      | is_same_type| is_decl_elem_type| has_null | track_ref |
+```
+
+| Bit | Name              | Value | Meaning when SET (1)                    | Meaning when UNSET (0)                  |
+| --- | ----------------- | ----- | --------------------------------------- | --------------------------------------- |
+| 0   | track_ref         | 0x01  | Track references for elements           | Don't track element references          |
+| 1   | has_null          | 0x02  | Collection may contain null elements    | No null elements (skip null checks)     |
+| 2   | is_decl_elem_type | 0x04  | Elements are the declared generic type  | Element types differ from declared type |
+| 3   | is_same_type      | 0x08  | All elements have the same runtime type | Elements have different runtime types   |
+
+**Common header values:**
+
+| Header | Hex | Meaning                                                        |
+| ------ | --- | -------------------------------------------------------------- |
+| 0x0C   | 12  | Declared type + same type, non-null, no ref tracking (optimal) |
+| 0x0D   | 13  | Declared type + same type, non-null, with ref tracking         |
+| 0x0E   | 14  | Declared type + same type, may have nulls, no ref tracking     |
+| 0x08   | 8   | Same type but not declared type (type info written once)       |
+| 0x00   | 0   | Different types, non-null, no ref tracking (type per element)  |
+
+#### Type Info After Header
+
+When `is_decl_elem_type` (bit 2) is NOT set, the element type info is written once after the header if `is_same_type` (bit 3) is set:
+
+```
+| header (0x08) | type_id (varuint32) | elements... |
+```
+
+When both `is_decl_elem_type` and `is_same_type` are NOT set, type info is written per element.
+
+#### Element Serialization Based on Header
+
+The header determines how each element is serialized:
 
 #### elements data
 
 Based on the elements header, the serialization of elements data may skip `ref flag`/`null flag`/`element type info`.
 
 ```python
-fury = ...
+fory = ...
 buffer = ...
 elems = ...
 if element_type_is_same:
     if not is_declared_type:
-        fury.write_type(buffer, elem_type)
+        fory.write_type(buffer, elem_type)
     elem_serializer = get_serializer(...)
     if track_ref:
         for elem in elems:
@@ -550,16 +1113,16 @@ if element_type_is_same:
 else:
     if track_ref:
         for elem in elems:
-            fury.write_ref(buffer, elem)
+            fory.write_ref(buffer, elem)
     elif has_null:
         for elem in elems:
-            fury.write_nullable(buffer, elem)
+            fory.write_nullable(buffer, elem)
     else:
         for elem in elems:
-            fury.write_value(buffer, elem)
+            fory.write_value(buffer, elem)
 ```
 
-[`CollectionSerializer#writeElements`](https://github.com/apache/fury/blob/20a1a78b17a75a123a6f5b7094c06ff77defc0fe/java/fury-core/src/main/java/org/apache/fury/serializer/collection/AbstractCollectionSerializer.java#L302)
+[`CollectionSerializer#writeElements`](https://github.com/apache/fory/blob/20a1a78b17a75a123a6f5b7094c06ff77defc0fe/java/fory-core/src/main/java/org/apache/fory/serializer/collection/CollectionLikeSerializer.java#L302)
 can be taken as an example.
 
 ### array
@@ -572,6 +1135,16 @@ then copy the whole buffer into the stream.
 Such serialization won't compress the array. If users want to compress primitive array, users need to register custom
 serializers for such types or mark it as list type.
 
+Float array specifics:
+
+- float16/bfloat16 array: write `varuint` length, then raw bytes in little endian order.
+- float8 array: write element type kind as a byte, then `varuint` length, then raw bytes in little endian order.
+
+#### Multi-dimensional arrays
+
+Xlang does not define a dedicated tensor encoding. Multi-dimensional arrays are serialized as
+nested lists, while one-dimensional primitive arrays use the `*_ARRAY` type IDs.
+
 #### object array
 
 Object array is serialized using the list format. Object component type will be taken as list element
@@ -579,58 +1152,69 @@ generic type.
 
 ### map
 
-> All Map serializers must extend `AbstractMapSerializer`.
-
-Format:
+Map uses a chunk-based format to handle heterogeneous key-value pairs efficiently:
 
 ```
-| length(unsigned varint) | key value chunk data | ... | key value chunk data |
+| varuint32: total_size | chunk_1 | chunk_2 | ... | chunk_n |
 ```
 
-#### map key-value chunk data
+#### Map Chunk Format
 
-Map iteration is too expensive, Fury won't compute the header like for list since it introduce
-[considerable overhead](https://github.com/apache/fury/issues/925).
-Users can use `MapFieldInfo` annotation to provide the header in advance. Otherwise Fury will use first key-value pair
-to predict header optimistically, and update the chunk header if the prediction failed at some pair.
-
-Fury will serialize the map chunk by chunk, every chunk has 255 pairs at most.
+Each chunk contains up to 255 key-value pairs with the same metadata characteristics:
 
 ```
-|    1 byte      |     1 byte     | variable bytes  |
-+----------------+----------------+-----------------+
-|    KV header   | chunk size: N  |   N*2 objects   |
+|    1 byte    |     1 byte     |        variable bytes        |
++--------------+----------------+------------------------------+
+|  KV header   |  chunk size N  |  N key-value pairs (N*2 obj) |
 ```
 
-KV header:
+#### KV Header Bits
 
-- If track key ref, use the first bit `0b1` of the header to flag it.
-- If the key has null, use the second bit `0b10` of the header to flag it. If ref tracking is enabled for this
-  key type, this flag is invalid.
-- If the actual key type of map is not the declared key type, use the 3rd bit `0b100` of the header to flag it.
-- If track value ref, use the 4th bit `0b1000` of the header to flag it.
-- If the value has null, use the 5th bit `0b10000` of the header to flag it. If ref tracking is enabled for this
-  value type, this flag is invalid.
-- If the value type of map is not the declared value type, use the 6rd bit `0b100000` of the header to flag it.
-- If key or value is null, that key and value will be written as a separate chunk, and chunk size writing will be
-  skipped too.
-
-If streaming write is enabled, which means Fury can't update written `chunk size`. In such cases, map key-value data
-format will be:
+The KV header is a single byte encoding metadata for both keys and values:
 
 ```
-|    1 byte      | variable bytes  |
-+----------------+-----------------+
-|    KV header   |   N*2 objects   |
+|  bit 7-6   |     bit 5     |     bit 4    |     bit 3     |     bit 2     |     bit 1    |     bit 0     |
++------------+---------------+--------------+---------------+---------------+--------------+---------------+
+|  reserved  | val_decl_type | val_has_null | val_track_ref | key_decl_type | key_has_null | key_track_ref |
 ```
 
-`KV header` will be a header marked by `MapFieldInfo` in java. For languages such as golang, this can be computed in
-advance for non-interface types most times. The implementation can generate different deserialization code based read
-header, and look up the generated code from a linear map/list.
+| Bit | Name          | Value | Meaning when SET (1)                     |
+| --- | ------------- | ----- | ---------------------------------------- |
+| 0   | key_track_ref | 0x01  | Track references for keys                |
+| 1   | key_has_null  | 0x02  | Keys may be null (rare, usually invalid) |
+| 2   | key_decl_type | 0x04  | Key is the declared generic type         |
+| 3   | val_track_ref | 0x08  | Track references for values              |
+| 4   | val_has_null  | 0x10  | Values may be null                       |
+| 5   | val_decl_type | 0x20  | Value is the declared generic type       |
+
+**Common KV header values:**
+
+| Header | Hex | Meaning                                                             |
+| ------ | --- | ------------------------------------------------------------------- |
+| 0x24   | 36  | Key + value are declared types, non-null, no ref tracking (optimal) |
+| 0x2C   | 44  | Key + value declared types, value tracks refs                       |
+| 0x34   | 52  | Key + value declared types, value may be null                       |
+| 0x00   | 0   | Key + value not declared types, non-null, no ref tracking           |
+
+#### Chunk Size
+
+- Maximum chunk size: 255 pairs (fits in 1 byte)
+- When key or value is null, that entry is serialized as a separate chunk with implicit size 1 (chunk size byte is skipped)
+- Reader tracks accumulated count against total map size to know when to stop reading chunks
+
+#### Why Chunk-Based Format?
+
+Map iteration is expensive. Computing a single header for all pairs would require two passes. The chunk-based
+approach allows:
+
+1. **Optimistic prediction**: Use first key-value pair to predict header
+2. **Adaptive chunking**: Start new chunk if prediction fails for a pair
+3. **Efficient reading**: Most maps fit in single chunk (< 255 pairs)
+4. **Memory efficiency**: Minimal overhead for common homogeneous maps
 
 #### Why serialize chunk by chunk?
 
-When fury will use first key-value pair to predict header optimistically, it can't know how many pairs have same
+When fory will use first key-value pair to predict header optimistically, it can't know how many pairs have same
 meta(tracking kef ref, key has null and so on). If we don't write chunk by chunk with max chunk size, we must write at
 least `X` bytes to take up a place for later to update the number which has same elements, `X` is the num_bytes for
 encoding varint encoding of map size.
@@ -649,159 +1233,229 @@ Enums are serialized as an unsigned var int. If the order of enum values change,
 the value users expect. In such cases, users must register enum serializer by make it write enum value as an enumerated
 string with unique hash disabled.
 
+### timestamp
+
+Timestamp represents a point in time independent of any calendar/timezone. It is encoded as:
+
+- `seconds` (int64): seconds since Unix epoch (1970-01-01T00:00:00Z)
+- `nanos` (uint32): nanosecond adjustment within the second
+
+On write, implementations must normalize negative timestamps so that `nanos` is always in `[0, 1_000_000_000)`.
+This is a fixed-size 12-byte payload (8 bytes seconds + 4 bytes nanos).
+
+### date
+
+Date represents a date without timezone. It is encoded as an `int32` count of days since the Unix epoch
+(1970-01-01). This is a fixed-size 4-byte payload.
+
 ### decimal
 
 Not supported for now.
 
 ### struct
 
-Struct means object of `class/pojo/struct/bean/record` type.
-Struct will be serialized by writing its fields data in fury order.
+Struct means object of `class/pojo/struct/bean/record` type. Struct values are serialized by writing
+fields in Fory order. The type meta before the value is written according to the rules in
+[Type Meta](#type-meta).
 
-Depending on schema compatibility, structs will have different formats.
+#### Field order
 
-#### field order
+Field order must be deterministic and identical across languages. This section defines the
+language-neutral ordering algorithm; implementations must follow the rules here rather than any
+language-specific helper classes.
 
-Field will be ordered as following, every group of fields will have its own order:
+##### Step 1: Field identifier
 
-- primitive fields: larger size type first, smaller later, variable size type last.
-- boxed primitive fields: same order as primitive fields
-- final fields: same type together, then sorted by field name lexicographically.
-- list fields: same order as final fields
-- map fields: same order as final fields
-- other fields: same order as final fields
+For every field, compute a stable identifier used for ordering:
 
-#### schema consistent
+- If a tag ID is configured (e.g., `@ForyField(id=...)`), use the tag ID as a decimal string.
+- Otherwise, use the field name converted to `snake_case`.
 
-Object will be written as:
+Tag IDs must be unique within a type; duplicate tag IDs are invalid.
+
+##### Step 2: Group assignment
+
+Assign each field to exactly one group in the following order:
+
+1. **Primitive (non-nullable)**: primitive or boxed numeric/boolean types with `nullable=false`.
+2. **Primitive (nullable)**: primitive or boxed numeric/boolean types with `nullable=true`.
+3. **Built-in (non-container)**: internal type IDs that are not user-defined and not UNKNOWN,
+   excluding collections and maps (for example: STRING, TIME types, UNION/TYPED_UNION/NAMED_UNION,
+   primitive arrays).
+4. **Collection**: list/set/object-array fields. Non-primitive arrays are treated as LIST for
+   ordering purposes.
+5. **Map**: map fields.
+6. **Other**: user-defined enum/struct/ext and UNKNOWN types.
+
+##### Step 3: Intra-group ordering
+
+Within each group, apply the following sort keys in order until a difference is found:
+
+**Primitive groups (1 and 2):**
+
+1. **Compression category**: fixed-size numeric and boolean types first, then compressed numeric
+   types (`VARINT32`, `VAR_UINT32`, `VARINT64`, `VAR_UINT64`, `TAGGED_INT64`, `TAGGED_UINT64`).
+2. **Primitive size** (descending): 8-byte > 4-byte > 2-byte > 1-byte.
+3. **Internal type ID** (descending) as a tie-breaker for equal sizes.
+4. **Field identifier** (lexicographic ascending).
+
+**Built-in / Collection / Map groups (3-5):**
+
+1. **Internal type ID** (ascending).
+2. **Field identifier** (lexicographic ascending).
+
+**Other group (6):**
+
+1. **Field identifier** (lexicographic ascending).
+
+If two fields still compare equal after the rules above, preserve a deterministic order by
+comparing declaring class name and then the original field name. This tie-breaker should be
+reachable only in invalid schemas (e.g., duplicate tag IDs).
+
+##### Notes
+
+- The ordering above is used for serialization order and TypeDef field lists. Schema hashes use
+  the field identifier ordering described in the schema hash section.
+- Collection/map normalization is required so peers with different concrete types (e.g.,
+  `List` vs `Collection`) still agree on ordering.
+- The compressed numeric rule is critical for cross-language consistency: compressed integer
+  fields are always placed after all fixed-width integer fields.
+
+#### Schema consistent (meta share disabled)
+
+Object value layout:
 
 ```
-|    4 byte     |  variable bytes  |
-+---------------+------------------+
-|   type hash   |   field values   |
+| [optional 4-byte schema hash] | field values |
 ```
 
-Type hash is used to check the type schema consistency across languages. Type hash will be the first 32 bits of 56 bits
-value of the type meta.
+The schema hash is written only when class-version checking is enabled. It is the low 32 bits of a
+MurmurHash3 x64_128 of the struct fingerprint string:
 
-Object fields will be serialized one by one using following format:
+- For each field, build `<field_id_or_name>,<type_id>,<ref>,<nullable>;`.
+- Field identifier is the tag ID if present, otherwise the snake_case field name.
+- Sort by field identifier lexicographically before concatenation.
 
-```
-not null primitive field value:
-|   var bytes    |
-+----------------+
-|   value data   |
-+----------------+
-nullable primitive field value:
-| one byte  |   var bytes   |
-+-----------+---------------+
-| null flag |  field value  |
-+-----------+---------------+
-field value of final type with ref tracking:
-| var bytes | var objects |
-+-----------+-------------+
-| ref meta  | value data  |
-+-----------+-------------+
-field value of final type without ref tracking:
-| one byte  | var objects |
-+-----------+-------------+
-| null flag | field value |
-+-----------+-------------+
-field value of non-final type with ref tracking:
-| one byte  | var bytes | var objects |
-+-----------+-------------+-------------+
-| ref meta  | type meta  | value data  |
-+-----------+-------------+-------------+
-field value of non-final type without ref tracking:
-| one byte  | var bytes | var objects |
-+-----------+------------+------------+
-| null flag | type meta | value data |
-+-----------+------------+------------+
+Field values are serialized in Fory order. Primitive fields are written as raw values (nullable
+primitives include a null flag). Non-primitive fields write ref/null flags as needed and then the
+value; polymorphic fields include type meta.
+
+#### Compatible mode (meta share enabled)
+
+The field value layout is the same as schema-consistent mode, but the type meta for
+`COMPATIBLE_STRUCT` and `NAMED_COMPATIBLE_STRUCT` uses shared TypeDef entries. Deserializers use
+TypeDef to map fields by name or tag ID and to honor nullable/ref flags from metadata; unknown fields
+are skipped.
+
+### Union
+
+Union values are encoded using three union type IDs so the union schema identity lives in type meta (like
+`STRUCT/ENUM/EXT`) and is easy to carry inside `Any`.
+
+#### IDL syntax
+
+```fdl
+union Contact [id=0] {
+  string email = 1;
+  int32  phone = 2;
+}
 ```
 
-#### Schema evolution
+Rules:
 
-Schema evolution have similar format as schema consistent mode for object except:
+- Each union alternative MUST have a stable tag number (`= 1`, `= 2`, ...).
+- Tag numbers MUST be unique within the union and MUST NOT be reused.
 
-- For the object type, `schema consistent` mode will write type by id only, but `schema evolution` mode will
-  write type consisting of field names, types and other meta too, see [Type meta](#type-meta).
-- Type meta of `final custom type` needs to be written too, because peers may not have this type defined.
+#### Type IDs and type meta
+
+| Type ID | Name        | Meaning                                              |
+| ------: | ----------- | ---------------------------------------------------- |
+|      33 | UNION       | Union value, schema identity not embedded            |
+|      34 | TYPED_UNION | Union value with registered numeric type ID          |
+|      35 | NAMED_UNION | Union value with embedded type name / shared TypeDef |
+
+Type meta encoding:
+
+- `UNION (33)`: no additional type meta payload.
+- `TYPED_UNION (34)`: write `user_type_id` as varuint32 after the type ID.
+- `NAMED_UNION (35)`: followed by named type meta (namespace + type name, or shared TypeDef marker/body).
+
+#### Union value payload
+
+A union payload is:
+
+```
+| case_id (varuint32) | case_value (Any-style value) |
+```
+
+`case_id` is the union alternative tag number.
+
+`case_value` MUST be encoded as a full xlang value:
+
+```
+| field_ref_meta | field_value_type_meta | field_value_bytes |
+```
+
+This is required even for primitives so unknown alternatives can be skipped safely.
+
+#### Wire layouts
+
+**UNION (schema known from context)**
+
+```
+| ... outer ref meta ... | type_id=UNION(33) | case_id | case_value |
+```
+
+**TYPED_UNION (schema identified by numeric id)**
+
+```
+| ... outer ref meta ... | type_id=TYPED_UNION(34) | user_type_id | case_id | case_value |
+```
+
+user_type_id: varuint32 numeric registration ID for the union schema.
+
+**NAMED_UNION (schema embedded by name/typedef)**
+
+```
+| ... outer ref meta ... | type_id=NAMED_UNION(35) | name_or_typedef | case_id | case_value |
+```
+
+#### Decoding rules
+
+1. Read outer ref meta and `type_id`.
+2. If `TYPED_UNION`, read `user_type_id` and resolve the union schema by ID.
+3. If `NAMED_UNION`, read named type meta and resolve the union schema.
+4. Read `case_id`.
+5. Read `case_value` as Any-style value (ref meta + type meta + value).
+
+If `case_id` is unknown, the decoder MUST still consume the case value using `field_value_type_meta` and
+standard `skipValue(type_id)`.
+
+#### When to use each type ID
+
+- Use `UNION` when the union schema is known from context.
+- Use `TYPED_UNION` for dynamic containers when numeric registration is available.
+- Use `NAMED_UNION` when name-based resolution is preferred or required.
+
+#### Compatibility notes
+
+- `case_id` is a stable identifier; added alternatives are forward compatible and unknown cases can be skipped.
 
 ### Type
 
 Type will be serialized using type meta format.
 
-## Implementation guidelines
+## Common Pitfalls
 
-### How to reduce memory read/write code
+1. **Byte Order**: Always use little-endian for multi-byte values
+2. **Varint Sign Extension**: Ensure proper handling of signed vs unsigned varints
+3. **Reference ID Ordering**: IDs must be assigned in serialization order
+4. **Field Order Consistency**: Must match exactly across languages in schema-consistent mode; in compatible mode, match by TypeDef field names or tag IDs
+5. **String Encoding**: Use best encoding for current language
+6. **Null Handling**: Different languages represent null differently
+7. **Empty Collections**: Still write length (0) and header byte
+8. **Schema Hash Calculation**: Must use the same fingerprint and MurmurHash3 algorithm across languages when enabled
 
-- Try to merge multiple bytes into an int/long write before writing to reduce memory IO and bound check cost.
-- Read multiple bytes as an int/long, then split into multiple bytes to reduce memory IO and bound check cost.
-- Try to use one varint/long to write flags and length together to save one byte cost and reduce memory io.
-- Condition branches are less expensive compared to memory IO cost unless there are too many branches.
+## Language Implementation Guidelines
 
-### Fast deserialization for static languages without runtime codegen support
-
-For type evolution, the serializer will encode the type meta into the serialized data. The deserializer will compare
-this meta with class meta in the current process, and use the diff to determine how to deserialize the data.
-
-For java/javascript/python, we can use the diff to generate serializer code at runtime and load it as class/function for
-deserialization. In this way, the type evolution will be as fast as type consist mode.
-
-For C++/Rust, we can't generate the serializer code at runtime. So we need to generate the code at compile-time using
-meta programming. But at that time, we don't know the type schema in other processes, so we can't generate the
-serializer code for such inconsistent types. We may need to generate the code which has a loop and compare field name
-one by one to decide whether to deserialize and assign the field or skip the field value.
-
-One fast way is that we can optimize the string comparison into `jump` instructions:
-
-- Assume the current type has `n` fields, and the peer type has `n1` fields.
-- Generate an auto growing `field id` from `0` for every sorted field in the current type at the compile time.
-- Compare the received type meta with current type, generate same id if the field name is same, otherwise generate an
-  auto growing id starting from `n`, cache this meta at runtime.
-- Iterate the fields of received type meta, use a `switch` to compare the `field id` to deserialize data
-  and `assign/skip` field value. **Continuous** field id will be optimized into `jump` in `switch` block, so it will
-  very fast.
-
-Here is an example, suppose process A has a class `Foo` with version 1 defined as `Foo1`, process B has a class `Foo`
-with version 2 defined as `Foo2`:
-
-```c++
-// class Foo with version 1
-class Foo1 {
-  int32_t v1; // id 0
-  std::string v2; // id 1
-};
-// class Foo with version 2
-class Foo2 {
-  // id 0, but will have id 2 in process A
-  bool v0;
-  // id 1, but will have id 0 in process A
-  int32_t v1;
-  // id 2, but will have id 3 in process A
-  int64_t long_value;
-  // id 3, but will have id 1 in process A
-  std::string v2;
-  // id 4, but will have id 4 in process A
-  std::vector<std::string> list;
-};
-```
-
-When process A received serialized `Foo2` from process B, here is how it deserialize the data:
-
-```c++
-Foo1 foo1 = ...;
-const std::vector<fury::FieldInfo> &field_infos = type_meta.field_infos;
-for (const auto &field_info : field_infos) {
-  switch (field_info.field_id) {
-    case 0:
-      foo1.v1 = buffer.read_varint32();
-      break;
-    case 1:
-      foo1.v2 = fury.read_string();
-      break;
-    default:
-      fury.skip_data(field_info);
-  }
-}
-```
+See [Xlang Implementation Guide](xlang_implementation_guide.md) documentation.

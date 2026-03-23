@@ -19,12 +19,12 @@
 
 import 'dart:typed_data';
 
-import 'package:fury/fury.dart';
+import 'package:fory/fory.dart';
 
 part 'typed_data_array_example.g.dart';
 
-@furyClass
-class TypedDataArrayExample with _$TypedDataArrayExampleFury{
+@foryClass
+class TypedDataArrayExample {
   late final Uint8List bytes;
   late final Int32List nums;
   late final BoolList bools;

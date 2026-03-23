@@ -2,18 +2,16 @@
 
 # This script is derived from https://github.com/ray-project/ray/blob/5ce25a57a0949673d17f3a8784f05b2d65290524/ci/lint/format.sh.
 
-# Black + Clang formatter (if installed). This script formats all changed files from the last mergebase.
+# Ruff formatter (if installed). This script formats all changed files from the last mergebase.
 # You are encouraged to run this locally before pushing changes for review.
 
 # Cause the script to exit if a single command fails
 set -euox pipefail
 
-FLAKE8_VERSION_REQUIRED="3.9.1"
-BLACK_VERSION_REQUIRED="22.1.0"
 SHELLCHECK_VERSION_REQUIRED="0.7.1"
 
 install_nodejs() {
-  #intall nodejs
+  #install nodejs
   filename="node-v16.17.1-linux-x64"
   pkg="$filename.tar.gz"
   NODE_URL="https://nodejs.org/dist/v16.17.1/$pkg"
@@ -26,27 +24,11 @@ install_nodejs() {
   npm -v
 }
 
-check_python_command_exist() {
-    VERSION=""
-    case "$1" in
-        black)
-            VERSION=$BLACK_VERSION_REQUIRED
-            ;;
-        flake8)
-            VERSION=$FLAKE8_VERSION_REQUIRED
-            ;;
-        *)
-            echo "$1 is not a required dependency"
-            exit 1
-    esac
-    if ! [ -x "$(command -v "$1")" ]; then
-        echo "$1 not installed. Install the python package with: pip install $1==$VERSION"
-        exit 1
-    fi
-}
-
-check_python_command_exist black
-check_python_command_exist flake8
+# Check for ruff
+if ! [ -x "$(command -v ruff)" ]; then
+    echo "ruff not installed. Install with: pip install ruff"
+    exit 1
+fi
 
 # this stops git rev-parse from failing if we run this from the .git directory
 builtin cd "$(dirname "${BASH_SOURCE:-$0}")"
@@ -54,31 +36,49 @@ builtin cd "$(dirname "${BASH_SOURCE:-$0}")"
 ROOT="$(git rev-parse --show-toplevel)"
 builtin cd "$ROOT" || exit 1
 
-FLAKE8_VERSION=$(flake8 --version | head -n 1 | awk '{print $1}')
-BLACK_VERSION=$(black --version | awk '{print $2}')
-
 # params: tool name, tool version, required version
 tool_version_check() {
     if [ "$2" != "$3" ]; then
-        echo "WARNING: Fury uses $1 $3, You currently are using $2. This might generate different results."
+        echo "WARNING: Fory uses $1 $3, You currently are using $2. This might generate different results."
     fi
 }
-
-tool_version_check "flake8" "$FLAKE8_VERSION" "$FLAKE8_VERSION_REQUIRED"
-tool_version_check "black" "$BLACK_VERSION" "$BLACK_VERSION_REQUIRED"
 
 if command -v shellcheck >/dev/null; then
     SHELLCHECK_VERSION=$(shellcheck --version | awk '/^version:/ {print $2}')
     tool_version_check "shellcheck" "$SHELLCHECK_VERSION" "$SHELLCHECK_VERSION_REQUIRED"
 else
-    echo "INFO: Fury uses shellcheck for shell scripts, which is not installed. You may install shellcheck=$SHELLCHECK_VERSION_REQUIRED with your system package manager."
+    echo "INFO: Fory uses shellcheck for shell scripts, which is not installed. You may install shellcheck=$SHELLCHECK_VERSION_REQUIRED with your system package manager."
 fi
 
 if command -v clang-format >/dev/null; then
-  CLANG_FORMAT_VERSION=$(clang-format --version | awk '{print $3}')
-  tool_version_check "clang-format" "$CLANG_FORMAT_VERSION" "12.0.0"
+  CLANG_FORMAT_OUTPUT=$(clang-format --version)
+  echo "Full clang-format version output: $CLANG_FORMAT_OUTPUT"
+  # Extract version number - handles both "clang-format version X.Y.Z" and "Ubuntu clang-format version X.Y.Z"
+  # Use sed instead of grep -P for macOS compatibility
+  CLANG_FORMAT_VERSION=$(echo "$CLANG_FORMAT_OUTPUT" | sed -n 's/.*\([0-9]\{1,\}\.[0-9]\{1,\}\.[0-9]\{1,\}\).*/\1/p' | head -n1)
+  echo "clang-format installed: $CLANG_FORMAT_VERSION"
+  if [ "$CLANG_FORMAT_VERSION" != "18.1.8" ]; then
+    echo "WARNING: Fory uses clang-format 18.1.8, You currently are using $CLANG_FORMAT_VERSION."
+    echo "Installing clang-format 18.1.8..."
+    pip install clang-format==18.1.8
+    # Refresh command hash to find the newly installed version
+    hash -r
+    # Update PATH to prioritize pip-installed binaries
+    PYTHON_SCRIPTS_DIR=$(python3 -c "import sysconfig; print(sysconfig.get_path('scripts'))")
+    export PATH="$PYTHON_SCRIPTS_DIR:$PATH"
+    # Update the version after installation
+    CLANG_FORMAT_OUTPUT=$(clang-format --version)
+    echo "Full clang-format version output after install: $CLANG_FORMAT_OUTPUT"
+    CLANG_FORMAT_VERSION=$(echo "$CLANG_FORMAT_OUTPUT" | sed -n 's/.*\([0-9]\{1,\}\.[0-9]\{1,\}\.[0-9]\{1,\}\).*/\1/p' | head -n1)
+    echo "clang-format updated to: $CLANG_FORMAT_VERSION"
+  fi
 else
     echo "WARNING: clang-format is not installed!"
+    echo "Installing clang-format 18.1.8..."
+    pip install clang-format==18.1.8
+    hash -r
+    PYTHON_SCRIPTS_DIR=$(python3 -c "import sysconfig; print(sysconfig.get_path('scripts'))")
+    export PATH="$PYTHON_SCRIPTS_DIR:$PATH"
 fi
 
 if ! command -v node >/dev/null; then
@@ -89,7 +89,7 @@ fi
 if [ ! -f "$ROOT/javascript/node_modules/.bin/eslint" ]; then
   echo "eslint is not installed, start to install it."
   pushd "$ROOT/javascript"
-  npm install --registry=https://registry.npmmirror.com
+  npm install
   popd
 fi
 
@@ -100,32 +100,15 @@ else
     echo "WARNING:java is not installed, skip format java files!"
 fi
 
-if [[ $(flake8 --version) != *"flake8_quotes"* ]]; then
-    echo "WARNING: Fury uses flake8 with flake8_quotes. Might error without it. Install with: pip install flake8-quotes"
-fi
-
-if [[ $(flake8 --version) != *"flake8-bugbear"* ]]; then
-    echo "WARNING: Fury uses flake8 with flake8-bugbear. Might error without it. Install with: pip install flake8-bugbear"
-fi
-
 SHELLCHECK_FLAGS=(
   --exclude=1090  # "Can't follow non-constant source. Use a directive to specify location."
   --exclude=1091  # "Not following {file} due to some error"
   --exclude=2207  # "Prefer mapfile or read -a to split command output (or quote to avoid splitting)." -- these aren't compatible with macOS's old Bash
 )
 
-BLACK_EXCLUDES=(
-    '--extend-exclude' 'python/build/*|examples/*'
-)
-
 GIT_LS_EXCLUDES=(
   ':(exclude)src/thirdparty/'
 )
-
-# TODO(barakmich): This should be cleaned up. I've at least excised the copies
-# of these arguments to this location, but the long-term answer is to actually
-# make a flake8 config file
-FLAKE8_PYX_IGNORES="--ignore=C408,E121,E123,E126,E211,E225,E226,E227,E24,E402,E704,E999,W503,W504,W605"
 
 # Format specified files
 format_files() {
@@ -159,24 +142,19 @@ format_files() {
     done
 
     if [ 0 -lt "${#python_files[@]}" ]; then
-      black "${python_files[@]}"
+      ruff format "${python_files[@]}"
+      ruff check --fix "${python_files[@]}"
     fi
 }
 
 format_all_scripts() {
-    command -v flake8 &> /dev/null;
-    HAS_FLAKE8=$?
-
-    echo "$(date)" "Black...."
+    echo "$(date)" "Ruff format...."
     git ls-files -- '*.py' "${GIT_LS_EXCLUDES[@]}" | xargs -P 10 \
-      black "${BLACK_EXCLUDES[@]}"
-    if [ $HAS_FLAKE8 ]; then
-      echo "$(date)" "Flake8...."
-      git ls-files -- '*.py' "${GIT_LS_EXCLUDES[@]}" | xargs \
-        flake8 --config=.flake8
-      git ls-files -- '*.pyx' '*.pxd' '*.pxi' "${GIT_LS_EXCLUDES[@]}" | xargs \
-        flake8 --config=.flake8 "$FLAKE8_PYX_IGNORES"
-    fi
+      ruff format
+
+    echo "$(date)" "Ruff check...."
+    git ls-files -- '*.py' "${GIT_LS_EXCLUDES[@]}" | xargs \
+      ruff check --fix
 }
 
 format_java() {
@@ -185,17 +163,80 @@ format_java() {
       cd "$ROOT/java"
       mvn -T10 --no-transfer-progress spotless:apply
       mvn -T10 --no-transfer-progress checkstyle:check
-      cd "$ROOT/java/benchmark"
+      mvn -T10 --no-transfer-progress install -DskipTests
+      cd "$ROOT/benchmarks/java"
       mvn -T10 --no-transfer-progress spotless:apply
       cd "$ROOT/integration_tests"
-      dirs=("graalvm_tests" "jdk_compatibility_tests" "latest_jdk_tests")
+      dirs=("graalvm_tests" "jdk_compatibility_tests")
       for d in "${dirs[@]}" ; do
         pushd "$d"
           mvn -T10 --no-transfer-progress spotless:apply
         popd
       done
+      cd "$ROOT"
     else
       echo "Maven not installed, skip java check"
+    fi
+}
+
+format_cpp() {
+    echo "$(date)" "clang-format C++ files...."
+    if command -v clang-format >/dev/null; then
+      git ls-files -- '*.cc' '*.h' "${GIT_LS_EXCLUDES[@]}" | xargs -P 5 clang-format -i
+      echo "$(date)" "C++ formatting done!"
+    else
+      echo "ERROR: clang-format is not installed!"
+      exit 1
+    fi
+}
+
+format_python() {
+    echo "$(date)" "Ruff format Python files...."
+    if command -v ruff >/dev/null; then
+      git ls-files -- '*.py' "${GIT_LS_EXCLUDES[@]}" | xargs -P 10 ruff format
+      git ls-files -- '*.py' "${GIT_LS_EXCLUDES[@]}" | xargs ruff check --fix
+      echo "$(date)" "Python formatting done!"
+    else
+      echo "ERROR: ruff is not installed! Install with: pip install ruff"
+      exit 1
+    fi
+}
+
+format_go() {
+    echo "$(date)" "gofmt format Go files...."
+    if command -v gofmt >/dev/null; then
+      git ls-files -- '*.go' "${GIT_LS_EXCLUDES[@]}" | xargs -P 5 gofmt -w
+      echo "$(date)" "Go formatting done!"
+    else
+      echo "ERROR: gofmt is not installed! Install Go from https://go.dev/"
+      exit 1
+    fi
+}
+
+format_csharp() {
+    echo "$(date)" "dotnet format C# files...."
+    if command -v dotnet >/dev/null; then
+      pushd "$ROOT/csharp"
+      dotnet format Fory.sln \
+        --exclude src/Fory.Generator/AnalyzerReleases.Shipped.md \
+        --exclude src/Fory.Generator/AnalyzerReleases.Unshipped.md
+      popd
+      echo "$(date)" "C# formatting done!"
+    else
+      echo "ERROR: dotnet is not installed! Install .NET SDK from https://dotnet.microsoft.com/download"
+      exit 1
+    fi
+}
+
+format_swift() {
+    echo "$(date)" "SwiftLint check Swift files...."
+    if command -v swiftlint >/dev/null; then
+      pushd "$ROOT/swift"
+      swiftlint lint --config .swiftlint.yml
+      popd
+      echo "$(date)" "SwiftLint done!"
+    else
+      echo "WARNING: swiftlint is not installed, skip swift lint check"
     fi
 }
 
@@ -225,6 +266,14 @@ format_all() {
       git ls-files -- '*.go' "${GIT_LS_EXCLUDES[@]}" | xargs -P 5 gofmt -w
     fi
 
+    echo "$(date)" "format csharp...."
+    if command -v dotnet >/dev/null; then
+      format_csharp
+    fi
+
+    echo "$(date)" "lint swift...."
+    format_swift
+
     echo "$(date)" "done!"
 }
 
@@ -233,7 +282,7 @@ format_all() {
 format_changed() {
     # The `if` guard ensures that the list of filenames is not empty, which
     # could cause the formatter to receive 0 positional arguments, making
-    # Black error.
+    # it error.
     #
     # `diff-filter=ACRM` and $MERGEBASE is to ensure we only format files that
     # exist on both branches.
@@ -241,18 +290,9 @@ format_changed() {
 
     if ! git diff --diff-filter=ACRM --quiet --exit-code "$MERGEBASE" -- '*.py' &>/dev/null; then
         git diff --name-only --diff-filter=ACRM "$MERGEBASE" -- '*.py' | xargs -P 5 \
-            black "${BLACK_EXCLUDES[@]}"
-        if which flake8 >/dev/null; then
-            git diff --name-only --diff-filter=ACRM "$MERGEBASE" -- '*.py' | xargs -P 5 \
-                 flake8 --config=.flake8
-        fi
-    fi
-
-    if ! git diff --diff-filter=ACRM --quiet --exit-code "$MERGEBASE" -- '*.pyx' '*.pxd' '*.pxi' &>/dev/null; then
-        if which flake8 >/dev/null; then
-            git diff --name-only --diff-filter=ACRM "$MERGEBASE" -- '*.pyx' '*.pxd' '*.pxi' | xargs -P 5 \
-                 flake8 --config=.flake8 "$FLAKE8_PYX_IGNORES"
-        fi
+            ruff format
+        git diff --name-only --diff-filter=ACRM "$MERGEBASE" -- '*.py' | xargs -P 5 \
+            ruff check --fix
     fi
 
     if which clang-format >/dev/null; then
@@ -275,13 +315,38 @@ format_changed() {
         fi
     fi
 
+    if command -v dotnet >/dev/null; then
+        local csharp_changed
+        csharp_changed="$(git diff --name-only --diff-filter=ACRM "$MERGEBASE" -- csharp || true)"
+        if [ -n "$csharp_changed" ]; then
+            format_csharp
+        fi
+    fi
+
     if which node >/dev/null; then
         pushd "$ROOT"
         if ! git diff --diff-filter=ACRM --quiet --exit-code "$MERGEBASE" -- '*.ts' &>/dev/null; then
             git diff --name-only --diff-filter=ACRM "$MERGEBASE" -- '*.ts' | xargs -P 5 \
                   node ./javascript/node_modules/.bin/eslint
         fi
+        # Install prettier globally
+        npm install -g prettier
+        # Fix markdown files except analyzer release tracking files.
+        # Exclude symlinks (for example CLAUDE.md) because prettier fails on explicitly passed symlink paths.
+        git ls-files -z -- '*.md' \
+            ':!:csharp/src/Fory.Generator/AnalyzerReleases.Shipped.md' \
+            ':!:csharp/src/Fory.Generator/AnalyzerReleases.Unshipped.md' \
+            | while IFS= read -r -d '' file; do
+                if [ ! -L "$file" ]; then
+                    printf '%s\0' "$file"
+                fi
+            done \
+            | xargs -0 prettier --write
         popd
+    fi
+
+    if ! git diff --diff-filter=ACRM --quiet --exit-code "$MERGEBASE" -- 'swift' &>/dev/null; then
+        format_swift
     fi
 }
 
@@ -301,10 +366,22 @@ elif [ "${1-}" == '--all' ]; then
     if [ -n "${FORMAT_SH_PRINT_DIFF-}" ]; then git --no-pager diff; fi
 elif [ "${1-}" == '--java' ]; then
     format_java
+elif [ "${1-}" == '--cpp' ]; then
+    format_cpp
+elif [ "${1-}" == '--python' ]; then
+    format_python
+elif [ "${1-}" == '--go' ]; then
+    format_go
+elif [ "${1-}" == '--swift' ]; then
+    format_swift
+elif [ "${1-}" == '--csharp' ]; then
+    format_csharp
+elif [ "${1-}" == '--swift' ]; then
+    format_swift
 else
     # Add the origin remote if it doesn't exist
     if ! git remote -v | grep -q origin; then
-        git remote add 'origin' 'https://github.com/apache/fury.git'
+        git remote add 'origin' 'https://github.com/apache/fory.git'
     fi
 
     # use unshallow fetch for `git merge-base origin/main HEAD` to work.

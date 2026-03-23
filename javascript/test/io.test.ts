@@ -17,10 +17,10 @@
  * under the License.
  */
 
-import { fromUint8Array } from '../packages/fury/lib/platformBuffer';
-import { BinaryReader } from '../packages/fury/lib/reader';
-import { Config, RefFlags } from '../packages/fury/lib/type';
-import { BinaryWriter } from '../packages/fury/lib/writer';
+import { fromUint8Array } from '../packages/core/lib/platformBuffer';
+import { BinaryReader } from '../packages/core/lib/reader';
+import { Config, RefFlags } from '../packages/core/lib/type';
+import { BinaryWriter } from '../packages/core/lib/writer';
 import { describe, expect, test } from '@jest/globals';
 
 
@@ -43,42 +43,42 @@ function num2Bin(num: number) {
                 32,
             ].forEach((x, y) => {
                 {
-                    writer[`uint${x}`](10);
+                    writer[`writeUint${x}`](10);
                     len += x / 8;
                     var ab = writer.dump();
                     expect(ab.byteLength).toBe(len);
                     if (x === 64) {
-                        expect(new DataView(ab.buffer, ab.byteOffset)[`getBigUint${x}`](writer.getCursor() - x / 8, true)).toBe(BigInt(10));
+                        expect(new DataView(ab.buffer, ab.byteOffset)[`getBigUint${x}`](writer.writeGetCursor() - x / 8, true)).toBe(BigInt(10));
                     } else {
-                        expect(new DataView(ab.buffer, ab.byteOffset)[`getUint${x}`](writer.getCursor() - x / 8, true)).toBe(10);
+                        expect(new DataView(ab.buffer, ab.byteOffset)[`getUint${x}`](writer.writeGetCursor() - x / 8, true)).toBe(10);
                     }
-                    expect(writer.getCursor()).toBe(len);
+                    expect(writer.writeGetCursor()).toBe(len);
                 }
 
                 {
-                    writer[`uint${x}`](-1);
+                    writer[`writeUint${x}`](-1);
                     len += x / 8;
                     var ab = writer.dump();
                     expect(ab.byteLength).toBe(len);
                     if (x === 64) {
-                        expect(new DataView(ab.buffer, ab.byteOffset)[`getBigUint${x}`](writer.getCursor() - x / 8, true)).toBe(BigInt(2 ** x) - BigInt(1));
+                        expect(new DataView(ab.buffer, ab.byteOffset)[`getBigUint${x}`](writer.writeGetCursor() - x / 8, true)).toBe(BigInt(2 ** x) - BigInt(1));
                     } else {
-                        expect(new DataView(ab.buffer, ab.byteOffset)[`getUint${x}`](writer.getCursor() - x / 8, true)).toBe(2 ** x - 1);
+                        expect(new DataView(ab.buffer, ab.byteOffset)[`getUint${x}`](writer.writeGetCursor() - x / 8, true)).toBe(2 ** x - 1);
                     }
-                    expect(writer.getCursor()).toBe(len);
+                    expect(writer.writeGetCursor()).toBe(len);
                 }
 
                 {
-                    writer[`uint${x}`](2 ** x);
+                    writer[`writeUint${x}`](2 ** x);
                     len += x / 8;
                     var ab = writer.dump();
                     expect(ab.byteLength).toBe(len);
                     if (x === 64) {
-                        expect(new DataView(ab.buffer, ab.byteOffset)[`getBigUint${x}`](writer.getCursor() - x / 8, true)).toBe(BigInt(0));
+                        expect(new DataView(ab.buffer, ab.byteOffset)[`getBigUint${x}`](writer.writeGetCursor() - x / 8, true)).toBe(BigInt(0));
                     } else {
-                        expect(new DataView(ab.buffer, ab.byteOffset)[`getUint${x}`](writer.getCursor() - x / 8, true)).toBe(0);
+                        expect(new DataView(ab.buffer, ab.byteOffset)[`getUint${x}`](writer.writeGetCursor() - x / 8, true)).toBe(0);
                     }
-                    expect(writer.getCursor()).toBe(len);
+                    expect(writer.writeGetCursor()).toBe(len);
                 }
             })
 
@@ -94,42 +94,42 @@ function num2Bin(num: number) {
                 32,
             ].forEach((x, y) => {
                 {
-                    writer[`int${x}`](10);
+                    writer[`writeInt${x}`](10);
                     len += x / 8;
                     var ab = writer.dump();
                     expect(ab.byteLength).toBe(len);
                     if (x === 64) {
-                        expect(new DataView(ab.buffer, ab.byteOffset)[`getBigInt${x}`](writer.getCursor() - x / 8, true)).toBe(BigInt(10));
+                        expect(new DataView(ab.buffer, ab.byteOffset)[`getBigInt${x}`](writer.writeGetCursor() - x / 8, true)).toBe(BigInt(10));
                     } else {
-                        expect(new DataView(ab.buffer, ab.byteOffset)[`getInt${x}`](writer.getCursor() - x / 8, true)).toBe(10);
+                        expect(new DataView(ab.buffer, ab.byteOffset)[`getInt${x}`](writer.writeGetCursor() - x / 8, true)).toBe(10);
                     }
-                    expect(writer.getCursor()).toBe(len);
+                    expect(writer.writeGetCursor()).toBe(len);
                 }
 
                 {
-                    writer[`int${x}`](2 ** x);
+                    writer[`writeInt${x}`](2 ** x);
                     len += x / 8;
                     var ab = writer.dump();
                     expect(ab.byteLength).toBe(len);
                     if (x === 64) {
-                        expect(new DataView(ab.buffer, ab.byteOffset)[`getBigInt${x}`](writer.getCursor() - x / 8, true)).toBe(BigInt(0));
+                        expect(new DataView(ab.buffer, ab.byteOffset)[`getBigInt${x}`](writer.writeGetCursor() - x / 8, true)).toBe(BigInt(0));
                     } else {
-                        expect(new DataView(ab.buffer, ab.byteOffset)[`getInt${x}`](writer.getCursor() - x / 8, true)).toBe(0);
+                        expect(new DataView(ab.buffer, ab.byteOffset)[`getInt${x}`](writer.writeGetCursor() - x / 8, true)).toBe(0);
                     }
-                    expect(writer.getCursor()).toBe(len);
+                    expect(writer.writeGetCursor()).toBe(len);
                 }
 
                 {
-                    writer[`int${x}`](-1);
+                    writer[`writeInt${x}`](-1);
                     len += x / 8;
                     var ab = writer.dump();
                     expect(ab.byteLength).toBe(len);
                     if (x === 64) {
-                        expect(new DataView(ab.buffer, ab.byteOffset)[`getBigInt${x}`](writer.getCursor() - x / 8, true)).toBe(BigInt(-1));
+                        expect(new DataView(ab.buffer, ab.byteOffset)[`getBigInt${x}`](writer.writeGetCursor() - x / 8, true)).toBe(BigInt(-1));
                     } else {
-                        expect(new DataView(ab.buffer, ab.byteOffset)[`getInt${x}`](writer.getCursor() - x / 8, true)).toBe(-1);
+                        expect(new DataView(ab.buffer, ab.byteOffset)[`getInt${x}`](writer.writeGetCursor() - x / 8, true)).toBe(-1);
                     }
-                    expect(writer.getCursor()).toBe(len);
+                    expect(writer.writeGetCursor()).toBe(len);
                 }
             })
         });
@@ -144,7 +144,7 @@ function num2Bin(num: number) {
                 {
                     const writer = new BinaryWriter(config);
                     const value = (2 ** (x * 7)) - 1;
-                    writer.varUInt32(value);
+                    writer.writeVarUInt32(value);
                     const ab = writer.dump();
                     expect(ab.byteLength).toBe(x);
                     for (let index = 0; index < ab.byteLength - 1; index++) {
@@ -153,13 +153,13 @@ function num2Bin(num: number) {
                     expect(num2Bin(ab[ab.byteLength - 1])).toBe('1111111');
                     const reader = new BinaryReader(config);
                     reader.reset(ab);
-                    const vari32 = reader.varUInt32();
+                    const vari32 = reader.readVarUInt32();
                     expect(vari32).toBe(value);
                 }
                 {
                     const writer = new BinaryWriter(config);
                     const value = (2 ** (x * 7));
-                    writer.varUInt32(value);
+                    writer.writeVarUInt32(value);
                     const ab = writer.dump();
                     expect(ab.byteLength).toBe(x + 1);
                     for (let index = 0; index < ab.byteLength - 1; index++) {
@@ -168,7 +168,7 @@ function num2Bin(num: number) {
                     expect(num2Bin(ab[ab.byteLength - 1])).toBe('1');
                     const reader = new BinaryReader(config);
                     reader.reset(ab);
-                    const vari32 = reader.varUInt32();
+                    const vari32 = reader.readVarUInt32();
                     expect(vari32).toBe(value);
                 }
             });
@@ -177,24 +177,25 @@ function num2Bin(num: number) {
         test('should varInt32 work', () => {
             const writer = new BinaryWriter(config);
             const value = -1;
-            writer.varInt32(value);
+            writer.writeVarInt32(value);
             const ab = writer.dump();
             expect(ab.byteLength).toBe(1);
             expect(num2Bin(ab[0])).toBe('1');
             const reader = new BinaryReader(config);
             reader.reset(ab);
-            const vari32 = reader.varInt32();
+            const vari32 = reader.readVarInt32();
             expect(vari32).toBe(value);
         });
 
         test('should short latin1 string work', () => {
             const writer = new BinaryWriter(config);
-            writer.stringOfVarUInt32("hello world");
+            writer.stringWithHeader("hello world");
             const ab = writer.dump();
             const reader = new BinaryReader(config);
             reader.reset(ab);
-            expect(reader.uint8()).toBe(0);
-            const len = reader.varUInt32();
+            const header = reader.readVarUint36Small();
+            expect(header & 0b11).toBe(0);
+            const len = header >>> 2;
             expect(len).toBe(11);
             const str = reader.stringLatin1(11);
             expect(str).toBe("hello world");
@@ -203,12 +204,13 @@ function num2Bin(num: number) {
         test('should long latin1 string work', () => {
             const writer = new BinaryWriter(config);
             const str = new Array(10).fill('hello world').join('');
-            writer.stringOfVarUInt32(str);
+            writer.stringWithHeader(str);
             const ab = writer.dump();
             const reader = new BinaryReader(config);
             reader.reset(ab);
-            expect(reader.uint8()).toBe(0);
-            const len = reader.varUInt32();
+            const header = reader.readVarUint36Small();
+            expect(header & 0b11).toBe(0);
+            const len = header >>> 2;
             expect(len).toBe(110);
             expect(reader.stringLatin1(len)).toBe(str);
         });
@@ -216,39 +218,41 @@ function num2Bin(num: number) {
         test('should short utf8 string work', () => {
             const writer = new BinaryWriter(config);
             const str = new Array(1).fill('hello 你好 😁').join('');
-            writer.stringOfVarUInt32(str);
+            writer.stringWithHeader(str);
             const ab = writer.dump();
             const reader = new BinaryReader(config);
 
             {
                 reader.reset(ab);
-                expect(reader.uint8()).toBe(1);
-                const len = reader.varUInt32();
+                const header = reader.readVarUint36Small();
+                expect(header & 0b11).toBe(2);
+                const len = header >>> 2;
                 expect(len).toBe(17);
                 expect(reader.stringUtf8(len)).toBe(str);
             }
             {
                 reader.reset(ab);
-                expect(reader.stringOfVarUInt32()).toBe(str);
+                expect(reader.stringWithHeader()).toBe(str);
             }
         });
 
         test('should long utf8 string work', () => {
             const writer = new BinaryWriter(config);
             const str = new Array(10).fill('hello 你好 😁').join('');
-            writer.stringOfVarUInt32(str);
+            writer.stringWithHeader(str);
             const ab = writer.dump();
             const reader = new BinaryReader(config);
             {
                 reader.reset(ab);
-                expect(reader.uint8()).toBe(1);
-                const len = reader.varUInt32();
+                const header = reader.readVarUint36Small();
+                expect(header & 0b11).toBe(2);
+                const len = header >>> 2;
                 expect(len).toBe(170);
                 expect(reader.stringUtf8(len)).toBe(str);
             }
             {
                 reader.reset(ab);
-                expect(reader.stringOfVarUInt32()).toBe(str);
+                expect(reader.stringWithHeader()).toBe(str);
             }
         });
 
@@ -282,7 +286,7 @@ function num2Bin(num: number) {
 
         test('should setUint32Position work', () => {
             const writer = new BinaryWriter(config);
-            writer.skip(10);
+            writer.writeSkip(10);
             writer.setUint32Position(0, 100);
             writer.setUint32Position(5, 100);
             const ab = writer.dump();
@@ -293,118 +297,118 @@ function num2Bin(num: number) {
 
         test('should float work', () => {
             const writer = new BinaryWriter(config);
-            writer.float32(10.01);
+            writer.writeFloat32(10.01);
             const ab = writer.dump();
             expect(ab.byteLength).toBe(4);
             const reader = new BinaryReader(config);
             reader.reset(ab);
-            expect(reader.float32().toFixed(2)).toBe((10.01).toFixed(2));
+            expect(reader.readFloat32().toFixed(2)).toBe((10.01).toFixed(2));
         });
 
         test('should float64 work', () => {
             const writer = new BinaryWriter(config);
-            writer.float64(10.01);
+            writer.writeFloat64(10.01);
             const ab = writer.dump();
             expect(ab.byteLength).toBe(8);
             const reader = new BinaryReader(config);
             reader.reset(ab);
-            expect(reader.float64().toFixed(2)).toBe((10.01).toFixed(2));
+            expect(reader.readFloat64().toFixed(2)).toBe((10.01).toFixed(2));
         });
 
         test('should reserve work', () => {
             const writer = new BinaryWriter(config);
             const byteLength = writer.getByteLen();
-            const cursor = writer.getCursor();
+            const cursor = writer.writeGetCursor();
             const reserved = writer.getReserved();
             writer.reserve(10);
 
             expect(writer.getReserved()).toBe(reserved + 10);
             expect(writer.getByteLen()).toBe(byteLength);
-            expect(writer.getCursor()).toBe(cursor);
+            expect(writer.writeGetCursor()).toBe(cursor);
         });
 
         test('should reserve work', () => {
             const writer = new BinaryWriter(config);
             const byteLength = writer.getByteLen();
-            const cursor = writer.getCursor();
+            const cursor = writer.writeGetCursor();
             const reserved = writer.getReserved();
             writer.reserve(1024 * 101);
 
             expect(writer.getReserved()).toBe(reserved + 1024 * 101);
             expect(writer.getByteLen()).toBe(byteLength * 2 + 1024 * 101);
-            expect(writer.getCursor()).toBe(cursor);
+            expect(writer.writeGetCursor()).toBe(cursor);
         });
 
         test('should reset work', () => {
             const writer = new BinaryWriter(config);
-            writer.int16(100);
+            writer.writeInt16(100);
             writer.reset();
-            expect(writer.getCursor()).toBe(0);
+            expect(writer.writeGetCursor()).toBe(0);
             expect(writer.getReserved()).toBe(0);
         });
 
         test('should int24 work', () => {
             const writer = new BinaryWriter(config);
-            writer.int24( (20 << 8)  | 10);
+            writer.writeInt24( (20 << 8)  | 10);
             const ab = writer.dump();
             const reader = new BinaryReader({});
             reader.reset(ab)
-            expect(reader.int8()).toBe(10);
-            expect(reader.int16()).toBe(20);
+            expect(reader.readInt8()).toBe(10);
+            expect(reader.readInt16()).toBe(20);
         });
 
         test('should varUInt64 work', () => {
             const writer = new BinaryWriter(config);
-            writer.varUInt64(2n ** 2n);
+            writer.writeVarUInt64(2n ** 2n);
             const ab = writer.dump();
             const reader = new BinaryReader({});
             reader.reset(ab)
-            expect(reader.varUInt64()).toBe(2n ** 2n);
+            expect(reader.readVarUInt64()).toBe(2n ** 2n);
         });
 
         test('should varUInt64 work', () => {
             const writer = new BinaryWriter(config);
-            writer.varUInt64(2n ** 63n);
+            writer.writeVarUInt64(2n ** 63n);
             const ab = writer.dump();
             const reader = new BinaryReader({});
             reader.reset(ab)
-            expect(reader.varUInt64()).toBe(2n ** 63n);
+            expect(reader.readVarUInt64()).toBe(2n ** 63n);
         });
 
         test('should varInt64 work', () => {
             const writer = new BinaryWriter(config);
-            writer.varInt64(2n ** 2n);
+            writer.writeVarInt64(2n ** 2n);
             const ab = writer.dump();
             const reader = new BinaryReader({});
             reader.reset(ab)
-            expect(reader.varInt64()).toBe(2n ** 2n);
+            expect(reader.readVarInt64()).toBe(2n ** 2n);
         });
 
         test('should varInt64 work', () => {
             const writer = new BinaryWriter(config);
-            writer.varInt64(2n ** 62n);
+            writer.writeVarInt64(2n ** 62n);
             const ab = writer.dump();
             const reader = new BinaryReader({});
             reader.reset(ab)
-            expect(reader.varInt64()).toBe(2n ** 62n);
+            expect(reader.readVarInt64()).toBe(2n ** 62n);
         });
 
         test('should silong work', () => {
             const writer = new BinaryWriter(config);
-            writer.sliInt64(2n ** 2n);
+            writer.writeSliInt64(2n ** 2n);
             const ab = writer.dump();
             const reader = new BinaryReader({});
             reader.reset(ab)
-            expect(reader.sliInt64()).toBe(2n ** 2n);
+            expect(reader.readSliInt64()).toBe(2n ** 2n);
         });
 
         test('should silong work', () => {
             const writer = new BinaryWriter(config);
-            writer.sliInt64(2n ** 62n);
+            writer.writeSliInt64(2n ** 62n);
             const ab = writer.dump();
             const reader = new BinaryReader({});
             reader.reset(ab)
-            expect(reader.sliInt64()).toBe(2n ** 62n);
+            expect(reader.readSliInt64()).toBe(2n ** 62n);
         });
     });
 })

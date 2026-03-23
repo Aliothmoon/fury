@@ -22,24 +22,25 @@
 part of 'nested_collection_example.dart';
 
 // **************************************************************************
-// FuryObjSpecGenerator
+// ForyObjSpecGenerator
 // **************************************************************************
 
-final $NestedObject = ClassSpec(
+final $NestedObject = TypeSpec(
   NestedObject,
   false,
+  true,
   false,
   [
     FieldSpec(
       'map',
-      TypeSpec(
+      FieldTypeSpec(
         Map,
         ObjType.MAP,
         false,
         false,
         null,
         const [
-          TypeSpec(
+          FieldTypeSpec(
             double,
             ObjType.FLOAT64,
             false,
@@ -47,14 +48,14 @@ final $NestedObject = ClassSpec(
             null,
             const [],
           ),
-          TypeSpec(
+          FieldTypeSpec(
             Map,
             ObjType.MAP,
             false,
             false,
             null,
             const [
-              TypeSpec(
+              FieldTypeSpec(
                 String,
                 ObjType.STRING,
                 false,
@@ -62,7 +63,7 @@ final $NestedObject = ClassSpec(
                 null,
                 const [],
               ),
-              TypeSpec(
+              FieldTypeSpec(
                 int,
                 ObjType.INT64,
                 false,
@@ -85,7 +86,7 @@ final $NestedObject = ClassSpec(
     ),
     FieldSpec(
       'name',
-      TypeSpec(
+      FieldTypeSpec(
         String,
         ObjType.STRING,
         false,
@@ -100,14 +101,14 @@ final $NestedObject = ClassSpec(
     ),
     FieldSpec(
       'names',
-      TypeSpec(
+      FieldTypeSpec(
         List,
         ObjType.LIST,
         false,
         false,
         null,
         const [
-          TypeSpec(
+          FieldTypeSpec(
             String,
             ObjType.STRING,
             false,
@@ -127,8 +128,3 @@ final $NestedObject = ClassSpec(
   null,
   () => NestedObject(),
 );
-
-mixin _$NestedObjectFury implements Furiable {
-  @override
-  Type get $furyType => NestedObject;
-}

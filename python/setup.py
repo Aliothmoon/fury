@@ -15,166 +15,134 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import glob
-import io
 import os
 import platform
-import re
-import shutil
+import subprocess
 import sys
-from os.path import abspath
-from os.path import join as pjoin
+import threading
+import time
+from os.path import abspath, join as pjoin
 
-import setuptools
-from setuptools import find_packages, setup  # Must import before Cython
-import Cython
-import numpy as np
-import pyarrow as pa
-from Cython.Build import cythonize
+from setuptools import setup
+from setuptools.dist import Distribution
 
-try:
-    pa.create_library_symlinks()  # for pyarrow 1.0
-except FileExistsError:
-    pass
-
-pyarrow_version = "15.0.0" if sys.version_info.minor < 13 else "18.0.0"
-# Check if we're running 64-bit Python
-if not sys.maxsize > 2**32:
-    raise RuntimeError("Not supported on 32-bit")
-
-if Cython.__version__ < "0.29":
-    raise Exception("Please upgrade to Cython 0.29 or newer")
-
-DEBUG = os.environ.get("FURY_DEBUG", "False").lower() == "true"
+DEBUG = os.environ.get("FORY_DEBUG", "False").lower() == "true"
 BAZEL_BUILD_EXT = os.environ.get("BAZEL_BUILD_EXT", "True").lower() == "true"
+
 if DEBUG:
     os.environ["CFLAGS"] = "-O0"
     BAZEL_BUILD_EXT = False
-print("DEBUG = {}, BAZEL_BUILD_EXT = {}".format(DEBUG, BAZEL_BUILD_EXT))
+
+print(f"DEBUG = {DEBUG}, BAZEL_BUILD_EXT = {BAZEL_BUILD_EXT}, PATH = {os.environ.get('PATH')}")
 
 setup_dir = abspath(os.path.dirname(__file__))
-print("setup_dir", setup_dir)
 project_dir = abspath(pjoin(setup_dir, os.pardir))
-fury_cpp_src_dir = abspath(pjoin(setup_dir, "../src/"))
-print("fury_cpp_src_dir", fury_cpp_src_dir)
+fory_cpp_src_dir = abspath(pjoin(setup_dir, "../src/"))
 
-# Try to clean up build directory
-shutil.rmtree(pjoin(setup_dir, "build"), ignore_errors=True)
-shutil.rmtree(pjoin(setup_dir, "pyfury.egg-info"), ignore_errors=True)
+print(f"setup_dir: {setup_dir}")
+print(f"project_dir: {project_dir}")
+print(f"fory_cpp_src_dir: {fory_cpp_src_dir}")
 
-ext_modules = []
-if BAZEL_BUILD_EXT:
-    import subprocess
+_RETRYABLE_NETWORK_ERROR_PATTERNS = (
+    "error downloading",
+    "download_and_extract",
+    "download from",
+    "http archive",
+    "get returned 500",
+    "get returned 502",
+    "get returned 503",
+    "get returned 504",
+    "network is unreachable",
+    "connection refused",
+    "connection reset",
+    "connection timed out",
+    "timed out waiting for",
+    "timed out",
+    "name resolution",
+    "temporary failure in name resolution",
+    "tls handshake timeout",
+    "temporary failure",
+)
 
-    subprocess.check_call(["bazel", "build", "-s", "//:cp_fury_so"])
-else:
-    ext_modules = cythonize(
-        ["pyfury/_util.pyx", "pyfury/_format.pyx", "pyfury/_serialization.pyx"],
-        gdb_debug=DEBUG,
-    )
-    for ext in ext_modules:
-        # The Numpy C headers are currently required
-        ext.include_dirs.append(np.get_include())
-        ext.include_dirs.append(pa.get_include())
-        ext.include_dirs.append(fury_cpp_src_dir)
-        ext.libraries.extend(pa.get_libraries())
-        ext.library_dirs.extend(pa.get_library_dirs())
-        ext.sources.extend(
-            set(glob.glob(fury_cpp_src_dir + "/**/*.cc", recursive=True))
-            - set(glob.glob(fury_cpp_src_dir + "/**/*test.cc", recursive=True))
+
+def _is_retryable_network_error(output: str) -> bool:
+    lowered = output.lower()
+    return any(pattern in lowered for pattern in _RETRYABLE_NETWORK_ERROR_PATTERNS)
+
+
+def _stream_pipe(pipe, sink, chunks):
+    try:
+        for line in iter(pipe.readline, ""):
+            chunks.append(line)
+            sink.write(line)
+            sink.flush()
+    finally:
+        pipe.close()
+
+
+def _run_with_retry(args, cwd, max_attempts=3):
+    for attempt in range(1, max_attempts + 1):
+        process = subprocess.Popen(
+            args,
+            cwd=cwd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            errors="replace",
+            bufsize=1,
         )
-        print("ext.sources", ext.sources)
-        if platform.system() == "Darwin":
-            ext.extra_compile_args.append("-stdlib=libc++")
-        if os.name == "posix":
-            ext.extra_compile_args.append("-std=c++17")
-        print("ext.extra_compile_args", ext.extra_compile_args)
 
-        # Avoid weird linker errors or runtime crashes on linux
-        ext.define_macros.append(("_GLIBCXX_USE_CXX11_ABI", "0"))
+        stdout_chunks = []
+        stderr_chunks = []
+        stdout_thread = threading.Thread(target=_stream_pipe, args=(process.stdout, sys.stdout, stdout_chunks))
+        stderr_thread = threading.Thread(target=_stream_pipe, args=(process.stderr, sys.stderr, stderr_chunks))
+        stdout_thread.start()
+        stderr_thread.start()
+        returncode = process.wait()
+        stdout_thread.join()
+        stderr_thread.join()
+
+        stdout_text = "".join(stdout_chunks)
+        stderr_text = "".join(stderr_chunks)
+        combined_output = f"{stdout_text}\n{stderr_text}"
+        if returncode == 0:
+            return
+
+        if attempt >= max_attempts or not _is_retryable_network_error(combined_output):
+            raise subprocess.CalledProcessError(returncode, args, output=stdout_text, stderr=stderr_text)
+
+        backoff_seconds = attempt * 5
+        print(
+            f"Detected transient network/download error while running {' '.join(args)} "
+            f"(attempt {attempt}/{max_attempts}); retrying in {backoff_seconds}s.",
+            file=sys.stderr,
+        )
+        time.sleep(backoff_seconds)
 
 
-class BinaryDistribution(setuptools.Distribution):
+class BinaryDistribution(Distribution):
+    def __init__(self, attrs=None):
+        super().__init__(attrs=attrs)
+        if BAZEL_BUILD_EXT:
+            import sys
+
+            python_version = f"{sys.version_info.major}.{sys.version_info.minor}"
+            bazel_args = ["bazel", "build", "-s"]
+            # Pass Python version to select the correct toolchain for C extension headers
+            bazel_args += [f"--@rules_python//python/config_settings:python_version={python_version}"]
+            arch = platform.machine().lower()
+            if arch in ("x86_64", "amd64"):
+                bazel_args += ["--config=x86_64"]
+            elif arch in ("aarch64", "arm64"):
+                bazel_args += ["--copt=-fsigned-char"]
+            bazel_args += ["//:cp_fory_so"]
+            # Ensure Windows path compatibility
+            cwd_path = os.path.normpath(project_dir)
+            _run_with_retry(bazel_args, cwd=cwd_path)
+
     def has_ext_modules(self):
         return True
 
 
-def parse_version():
-    __init__file = os.path.join(os.path.dirname(__file__), "pyfury/__init__.py")
-    with open(__init__file) as f:
-        code = f.read()
-        match = re.search(r'__version__ = "(.*)"', code)
-        return match.group(1)
-
-
-_pkg_files = [
-    "**/*.pxd",
-    "**/*.pyx",
-    "**/*.pxd",
-    "*.so",
-    "*.dylib",
-    "*.dll",
-    "*.pyd",
-]
-
-
-long_description = io.open(
-    os.path.join(setup_dir, os.path.pardir, "README.md"), "r", encoding="utf-8"
-).read()
-disclaimer = io.open(
-    os.path.join(setup_dir, os.path.pardir, "DISCLAIMER"), "r", encoding="utf-8"
-).read()
-long_description += "\n" + disclaimer
-
-
-setup(
-    name="pyfury",
-    version=parse_version(),
-    author="chaokunyang",
-    author_email="shawn.ck.yang@gmail.com",
-    maintainer="https://github.com/chaokunyang",
-    maintainer_email="shawn.ck.yang@gmail.com",
-    package_data={
-        "pyfury": _pkg_files,
-        "pyfury.format": _pkg_files,
-        "pyfury.lib.mmh3": _pkg_files,
-    },
-    include_package_data=True,
-    packages=find_packages(),
-    description="Apache Fury™(incubating) is a blazingly fast multi-language serialization "
-    + "framework powered by jit and zero-copy",
-    long_description=long_description,
-    long_description_content_type="text/markdown",
-    keywords="fury serialization multi-language arrow row-format jit "
-    + "codegen polymorphic zero-copy",
-    classfiers=[
-        "License :: OSI Approved :: Apache Software License",
-        "Development Status :: 4 - Beta",
-        "Programming Language :: Python :: 3.8",
-        "Programming Language :: Python :: 3.9",
-        "Programming Language :: Python :: 3.10",
-        "Programming Language :: Python :: 3.11",
-        "Programming Language :: Python :: 3.12",
-        "Programming Language :: Python :: Implementation :: CPython",
-    ],
-    zip_safe=False,
-    install_requires=[
-        "cloudpickle",
-    ],
-    extras_require={
-        "format": [f"pyarrow == {pyarrow_version}"],
-        "all": [f"pyarrow == {pyarrow_version}"],
-    },
-    setup_requires=[
-        "Cython",
-        "wheel",
-        f"pyarrow == {pyarrow_version}",
-        "numpy" 'dataclasses; python_version<"3.7"',
-    ],
-    distclass=BinaryDistribution,
-    ext_modules=ext_modules,
-    license="https://www.apache.org/licenses/LICENSE-2.0",
-)
-
-if os.path.exists(pjoin(setup_dir, "pyfury", "_fury.cpp")):
-    os.remove(pjoin(setup_dir, "pyfury", "_fury.cpp"))
+if __name__ == "__main__":
+    setup(distclass=BinaryDistribution)

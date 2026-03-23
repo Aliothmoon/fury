@@ -1,7 +1,7 @@
 ---
 title: GraalVM Guide
-sidebar_position: 6
-id: graalvm_guide
+sidebar_position: 19
+id: serialization
 license: |
   Licensed to the Apache Software Foundation (ASF) under one or more
   contributor license agreements.  See the NOTICE file distributed with
@@ -21,145 +21,207 @@ license: |
 
 ## GraalVM Native Image
 
-GraalVM `native image` can compile java code into native code ahead to build faster, smaller, leaner applications.
-The native image doesn't have a JIT compiler to compile bytecode into machine code, and doesn't support
-reflection unless configure reflection file.
+GraalVM `native image` compiles Java code into native executables ahead-of-time, resulting in faster startup and lower memory usage. However, native images don't support runtime JIT compilation or reflection without explicit configuration.
 
-Fury runs on GraalVM native image pretty well. Fury generates all serializer code for `Fury JIT framework` and `MethodHandle/LambdaMetafactory` at graalvm build time. Then use those generated code for serialization at runtime without
-any extra cost, the performance is great.
+Apache Fory™ works excellently with GraalVM native image by using **codegen instead of reflection**. All serializer code is generated at build time, eliminating the need for reflection configuration files in most cases.
 
-In order to use Fury on graalvm native image, you must create Fury as an **static** field of a class, and **register** all classes at
- the enclosing class initialize time. Then configure `native-image.properties` under
-`resources/META-INF/native-image/$xxx/native-image.propertie` to tell graalvm to init the class at native image
-build time. For example, here we configure `org.apache.fury.graalvm.Example` class be init at build time:
+## How It Works
 
-```properties
-Args = --initialize-at-build-time=org.apache.fury.graalvm.Example
-```
+Fory generates serialization code at GraalVM build time when you:
 
-Another benefit using fury is that you don't have to configure [reflection json](https://www.graalvm.org/latest/reference-manual/native-image/metadata/#specifying-reflection-metadata-in-json) and
-[serialization json](https://www.graalvm.org/latest/reference-manual/native-image/metadata/#serialization), which is
-very tedious, cumbersome and inconvenient. When using fury, you just need to invoke
-`org.apache.fury.Fury.register(Class<?>, boolean)` for every type you want to serialize.
+1. Create Fory as a **static** field
+2. **Register** all classes in a static initializer
+3. Call `fory.ensureSerializersCompiled()` to compile serializers
+4. Configure the class to initialize at build time via `native-image.properties`
 
-Note that Fury `asyncCompilationEnabled` option will be disabled automatically for graalvm native image since graalvm
-native image doesn't support JIT at the image run time.
+**The main benefit**: You don't need to configure [reflection json](https://www.graalvm.org/latest/reference-manual/native-image/metadata/#specifying-reflection-metadata-in-json) or [serialization json](https://www.graalvm.org/latest/reference-manual/native-image/metadata/#serialization) for most serializable classes.
 
-## Not thread-safe Fury
+Note: Fory's `asyncCompilationEnabled` option is automatically disabled for GraalVM native image since runtime JIT is not supported.
 
-Example:
+## Basic Usage
+
+### Step 1: Create Fory and Register Classes
 
 ```java
-import org.apache.fury.Fury;
-import org.apache.fury.util.Preconditions;
-
-import java.util.List;
-import java.util.Map;
+import org.apache.fory.Fory;
 
 public class Example {
-  public record Record (
-    int f1,
-    String f2,
-    List<String> f3,
-    Map<String, Long> f4) {
-  }
-
-  static Fury fury;
+  // Must be static field
+  static Fory fory;
 
   static {
-    fury = Fury.builder().build();
-    // register and generate serializer code.
-    fury.register(Record.class, true);
+    fory = Fory.builder().build();
+    fory.register(MyClass.class);
+    fory.register(AnotherClass.class);
+    // Compile all serializers at build time
+    fory.ensureSerializersCompiled();
   }
 
   public static void main(String[] args) {
-    Record record = new Record(10, "abc", List.of("str1", "str2"), Map.of("k1", 10L, "k2", 20L));
-    System.out.println(record);
-    byte[] bytes = fury.serialize(record);
-    Object o = fury.deserialize(bytes);
-    System.out.println(o);
-    Preconditions.checkArgument(record.equals(o));
+    byte[] bytes = fory.serialize(new MyClass());
+    MyClass obj = (MyClass) fory.deserialize(bytes);
   }
 }
 ```
 
-Then add `org.apache.fury.graalvm.Example` build time init to `native-image.properties` configuration:
+### Step 2: Configure Build-Time Initialization
+
+Create `resources/META-INF/native-image/your-group/your-artifact/native-image.properties`:
 
 ```properties
-Args = --initialize-at-build-time=org.apache.fury.graalvm.Example
+Args = --initialize-at-build-time=com.example.Example
 ```
 
-## Thread-safe Fury
+## ForyGraalVMFeature (Optional)
+
+For most types with public constructors, the basic setup above is sufficient. However, some advanced cases require reflection registration:
+
+- **Private constructors** (classes without accessible no-arg constructor)
+- **Private inner classes/records**
+- **Dynamic proxy serialization**
+
+The `fory-graalvm-feature` module automatically handles these cases, eliminating the need for manual `reflect-config.json` configuration.
+
+### Adding the Dependency
+
+```xml
+<dependency>
+  <groupId>org.apache.fory</groupId>
+  <artifactId>fory-graalvm-feature</artifactId>
+  <version>${fory.version}</version>
+</dependency>
+```
+
+### Enabling the Feature
+
+Add to your `native-image.properties`:
+
+```properties
+Args = --initialize-at-build-time=com.example.Example \
+       --features=org.apache.fory.graalvm.feature.ForyGraalVMFeature
+```
+
+### What ForyGraalVMFeature Handles
+
+| Scenario                        | Without Feature              | With Feature       |
+| ------------------------------- | ---------------------------- | ------------------ |
+| Public classes with no-arg ctor | ✅ Works                     | ✅ Works           |
+| Private constructors            | ❌ Needs reflect-config.json | ✅ Auto-registered |
+| Private inner records           | ❌ Needs reflect-config.json | ✅ Auto-registered |
+| Dynamic proxies                 | ❌ Needs manual config       | ✅ Auto-registered |
+
+### Example with Private Record
 
 ```java
-import org.apache.fury.Fury;
-import org.apache.fury.ThreadLocalFury;
-import org.apache.fury.ThreadSafeFury;
-import org.apache.fury.util.Preconditions;
+public class Example {
+  // Private inner record - requires ForyGraalVMFeature
+  private record PrivateRecord(int id, String name) {}
 
-import java.util.List;
-import java.util.Map;
-
-public class ThreadSafeExample {
-  public record Foo (
-    int f1,
-    String f2,
-    List<String> f3,
-    Map<String, Long> f4) {
-  }
-
-  static ThreadSafeFury fury;
+  static Fory fory;
 
   static {
-    fury = new ThreadLocalFury(classLoader -> {
-      Fury f = Fury.builder().build();
-      // register and generate serializer code.
-      f.register(Foo.class, true);
+    fory = Fory.builder().build();
+    fory.register(PrivateRecord.class);
+    fory.ensureSerializersCompiled();
+  }
+}
+```
+
+### Example with Dynamic Proxy
+
+```java
+import org.apache.fory.util.GraalvmSupport;
+
+public class ProxyExample {
+  public interface MyService {
+    String execute();
+  }
+
+  static Fory fory;
+
+  static {
+    fory = Fory.builder().build();
+    // Register proxy interface for serialization
+    GraalvmSupport.registerProxySupport(MyService.class);
+    fory.ensureSerializersCompiled();
+  }
+}
+```
+
+## Thread-Safe Fory
+
+For multi-threaded applications, use `ThreadLocalFory`:
+
+```java
+import org.apache.fory.Fory;
+import org.apache.fory.ThreadLocalFory;
+import org.apache.fory.ThreadSafeFory;
+
+public class ThreadSafeExample {
+  public record Foo(int f1, String f2, List<String> f3) {}
+
+  static ThreadSafeFory fory;
+
+  static {
+    fory = new ThreadLocalFory(classLoader -> {
+      Fory f = Fory.builder().build();
+      f.register(Foo.class);
+      f.ensureSerializersCompiled();
       return f;
     });
   }
 
   public static void main(String[] args) {
-    System.out.println(fury.deserialize(fury.serialize("abc")));
-    System.out.println(fury.deserialize(fury.serialize(List.of(1,2,3))));
-    System.out.println(fury.deserialize(fury.serialize(Map.of("k1", 1, "k2", 2))));
-    Foo foo = new Foo(10, "abc", List.of("str1", "str2"), Map.of("k1", 10L, "k2", 20L));
-    System.out.println(foo);
-    byte[] bytes = fury.serialize(foo);
-    Object o = fury.deserialize(bytes);
-    System.out.println(o);
+    Foo foo = new Foo(10, "abc", List.of("str1", "str2"));
+    byte[] bytes = fory.serialize(foo);
+    Foo result = (Foo) fory.deserialize(bytes);
   }
 }
 ```
 
-Then add `org.apache.fury.graalvm.ThreadSafeExample` build time init to `native-image.properties` configuration:
+## Troubleshooting
 
-```properties
-Args = --initialize-at-build-time=org.apache.fury.graalvm.ThreadSafeExample
+### "Type is instantiated reflectively but was never registered"
+
+If you see this error:
+
 ```
+Type com.example.MyClass is instantiated reflectively but was never registered
+```
+
+**Solution**: Register the class with Fory (don't add to reflect-config.json):
+
+```java
+fory.register(MyClass.class);
+fory.ensureSerializersCompiled();
+```
+
+If the class has a private constructor, either:
+
+1. Add `fory-graalvm-feature` dependency, or
+2. Create a `reflect-config.json` for that specific class
 
 ## Framework Integration
 
-For framework developers, if you want to integrate fury for serialization, you can provided a configuration file to let
-the users to list all the classes they want to serialize, then you can load those classes and invoke
-`org.apache.fury.Fury.register(Class<?>, boolean)` to register those classes in your Fury integration class, and configure that
-class be initialized at graalvm native image build time.
+For framework developers integrating Fory:
+
+1. Provide a configuration file for users to list serializable classes
+2. Load those classes and call `fory.register(Class<?>)` for each
+3. Call `fory.ensureSerializersCompiled()` after all registrations
+4. Configure your integration class for build-time initialization
 
 ## Benchmark
 
-Here we give two class benchmarks between Fury and Graalvm Serialization.
+Performance comparison between Fory and GraalVM JDK Serialization:
 
-When Fury compression is disabled:
+| Type   | Compression | Speed      | Size |
+| ------ | ----------- | ---------- | ---- |
+| Struct | Off         | 46x faster | 43%  |
+| Struct | On          | 24x faster | 31%  |
+| Pojo   | Off         | 12x faster | 56%  |
+| Pojo   | On          | 12x faster | 48%  |
 
-- Struct: Fury is `46x speed, 43% size` compared to JDK.
-- Pojo: Fury is `12x speed, 56% size` compared to JDK.
-
-When Fury compression is enabled:
-
-- Struct: Fury is `24x speed, 31% size` compared to JDK.
-- Pojo: Fury is `12x speed, 48% size` compared to JDK.
-
-See [[Benchmark.java](https://github.com/apache/fury/blob/main/integration_tests/graalvm_tests/src/main/java/org/apache/fury/graalvm/Benchmark.java)] for benchmark code.
+See [Benchmark.java](https://github.com/apache/fory/blob/main/integration_tests/graalvm_tests/src/main/java/org/apache/fory/graalvm/Benchmark.java) for benchmark code.
 
 ### Struct Benchmark
 
@@ -188,28 +250,28 @@ No compression:
 
 ```
 Benchmark repeat number: 400000
-Object type: class org.apache.fury.graalvm.Struct
+Object type: class org.apache.fory.graalvm.Struct
 Compress number: false
-Fury size: 76.0
+Fory size: 76.0
 JDK size: 178.0
-Fury serialization took mills: 49
+Fory serialization took mills: 49
 JDK serialization took mills: 2254
-Compare speed: Fury is 45.70x speed of JDK
-Compare size: Fury is 0.43x size of JDK
+Compare speed: Fory is 45.70x speed of JDK
+Compare size: Fory is 0.43x size of JDK
 ```
 
 Compress number:
 
 ```
 Benchmark repeat number: 400000
-Object type: class org.apache.fury.graalvm.Struct
+Object type: class org.apache.fory.graalvm.Struct
 Compress number: true
-Fury size: 55.0
+Fory size: 55.0
 JDK size: 178.0
-Fury serialization took mills: 130
+Fory serialization took mills: 130
 JDK serialization took mills: 3161
-Compare speed: Fury is 24.16x speed of JDK
-Compare size: Fury is 0.31x size of JDK
+Compare speed: Fory is 24.16x speed of JDK
+Compare size: Fory is 0.31x size of JDK
 ```
 
 ### Pojo Benchmark
@@ -231,26 +293,26 @@ No compression:
 
 ```
 Benchmark repeat number: 400000
-Object type: class org.apache.fury.graalvm.Foo
+Object type: class org.apache.fory.graalvm.Foo
 Compress number: false
-Fury size: 541.0
+Fory size: 541.0
 JDK size: 964.0
-Fury serialization took mills: 1663
+Fory serialization took mills: 1663
 JDK serialization took mills: 16266
-Compare speed: Fury is 12.19x speed of JDK
-Compare size: Fury is 0.56x size of JDK
+Compare speed: Fory is 12.19x speed of JDK
+Compare size: Fory is 0.56x size of JDK
 ```
 
 Compress number:
 
 ```
 Benchmark repeat number: 400000
-Object type: class org.apache.fury.graalvm.Foo
+Object type: class org.apache.fory.graalvm.Foo
 Compress number: true
-Fury size: 459.0
+Fory size: 459.0
 JDK size: 964.0
-Fury serialization took mills: 1289
+Fory serialization took mills: 1289
 JDK serialization took mills: 15069
-Compare speed: Fury is 12.11x speed of JDK
-Compare size: Fury is 0.48x size of JDK
+Compare speed: Fory is 12.11x speed of JDK
+Compare size: Fory is 0.48x size of JDK
 ```

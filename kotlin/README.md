@@ -1,80 +1,216 @@
-# Apache Fury™ Kotlin
+# Apache Fory™ Kotlin
 
-This provides additional Fury support for Kotlin Serialization on JVM:
+Apache Fory™ Kotlin provides optimized serializers for Kotlin types, built on top of Fory Java. It delivers high-performance serialization for the Kotlin ecosystem with full support for Kotlin-specific types and idioms.
 
-Most standard kotlin types are already supported out of the box with the default Fury java implementation.
+Most standard Kotlin types work out of the box with the default Fory Java implementation, while Fory Kotlin adds additional support for Kotlin-specific types.
 
-Fury Kotlin provides additional tests and implementation support for Kotlin types.
+## Features
 
-Fury Kotlin is tested and works with the following types:
+### Supported Types
 
-- primitives: `Byte`, `Boolean`, `Int`, `Short`, `Long`, `Char`, `Float`, `Double`, `UByte`, `UShort`, `UInt`, `ULong`.
-- `Byte`, `Boolean`, `Int`, `Short`, `Long`, `Char`, `Float`, `Double` works out of the box with the default fury java implementation.
-- stdlib `collection`: `ArrayDeque`, `ArrayList`, `HashMap`,`HashSet`, `LinkedHashSet`, `LinkedHashMap`.
-- `ArrayList`, `HashMap`,`HashSet`, `LinkedHashSet`, `LinkedHashMap` works out of the box with the default fury java implementation.
-- `String` works out of the box with the default fury java implementation.
-- arrays: `Array`, `BooleanArray`, `ByteArray`, `CharArray`, `DoubleArray`, `FloatArray`, `IntArray`, `LongArray`, `ShortArray`
-- all standard array types work out of the box with the default fury java implementation.
-- unsigned arrays: `UByteArray`, `UShortArray`, `UIntArray`, `ULongArray`
-- from stdlib: `Pair`, `Triple`, `Result`
-- kotlin.random: `Random`
-- kotlin.ranges: `CharRange`, `CharProgression`, `IntRange`, `IntProgression`, `LongRange`, `LongProgression`, `UintRange`, `UintProgression`, `ULongRange`, `ULongProgression`
-- kotlin.text: `Regex`
-- kotlin.time: `Duration`
-- kotlin.uuid: `Uuid`
+Apache Fory™ Kotlin is tested and works with the following types:
 
-Additional support is added for the following classes in kotlin:
+- **Data classes**: Full support for data class serialization with all field types
+- **Primitives**: `Byte`, `Boolean`, `Int`, `Short`, `Long`, `Char`, `Float`, `Double` (works out of the box)
+- **Unsigned primitives**: `UByte`, `UShort`, `UInt`, `ULong`
+- **Unsigned arrays**: `UByteArray`, `UShortArray`, `UIntArray`, `ULongArray`
+- **Collections**: `ArrayList`, `HashMap`, `HashSet`, `LinkedHashSet`, `LinkedHashMap` (works out of the box), `ArrayDeque`
+- **Empty collections**: `emptyList`, `emptyMap`, `emptySet`
+- **Arrays**: All standard array types (works out of the box)
+- **Stdlib types**: `Pair`, `Triple`, `Result`
+- **Ranges**: `IntRange`, `LongRange`, `CharRange`, `IntProgression`, `LongProgression`, `CharProgression`, `UIntRange`, `ULongRange`
+- **Other**: `kotlin.text.Regex`, `kotlin.time.Duration`, `kotlin.uuid.Uuid`, `kotlin.random.Random`
 
-- Unsigned primitives: `UByte`, `UShort`, `UInt`, `ULong`
-- Unsigned array types: `UByteArray`, `UShortArray`, `UIntArray`, `ULongArray`
-- Empty collections: `emptyList`, `emptyMap`, `emptySet`
-- Collections: `ArrayDeque`
-- kotlin.time: `Duration`
-- kotlin.uuid: `Uuid`
+### Kotlin-Specific Features
 
-Additional Notes:
-
-- wrappers classes created from `withDefault` method is currently not supported.
+- **Default Value Support**: Automatic handling of Kotlin data class default parameters during schema evolution
+- **Unsigned Type Support**: Full support for Kotlin unsigned primitives and arrays
+- **Range Serialization**: Optimized serializers for Kotlin ranges and progressions
 
 ## Quick Start
 
 ```kotlin
-import org.apache.fury.Fury
-import org.apache.fury.ThreadSafeFury
-import org.apache.fury.serializer.kotlin.KotlinSerializers
+import org.apache.fory.Fory
+import org.apache.fory.ThreadSafeFory
+import org.apache.fory.serializer.kotlin.KotlinSerializers
 
 data class Person(val name: String, val id: Long, val github: String)
-data class Point(val x : Int, val y : Int, val z : Int)
+data class Point(val x: Int, val y: Int, val z: Int)
 
-fun main(args: Array<String>) {
-    // Note: following fury init code should be executed only once in a global scope instead
-    // of initializing it everytime when serialization.
-    val fury: ThreadSafeFury = Fury.builder().requireClassRegistration(true).buildThreadSafeFury()
-    KotlinSerializers.registerSerializers(fury)
-    fury.register(Person::class.java)
-    fury.register(Point::class.java)
+fun main() {
+    // Create Fory instance (should be reused)
+    val fory: ThreadSafeFory = Fory.builder()
+        .requireClassRegistration(true)
+        .buildThreadSafeFory()
+
+    // Register Kotlin serializers
+    KotlinSerializers.registerSerializers(fory)
+
+    // Register your classes
+    fory.register(Person::class.java)
+    fory.register(Point::class.java)
 
     val p = Person("Shawn Yang", 1, "https://github.com/chaokunyang")
-    println(fury.deserialize(fury.serialize(p)))
-    println(fury.deserialize(fury.serialize(Point(1, 2, 3))))
+    println(fory.deserialize(fory.serialize(p)))
+    println(fory.deserialize(fory.serialize(Point(1, 2, 3))))
 }
 ```
 
-## Building Fury Kotlin
+## Default Value Support
 
-```bash
-mvn clean
-mvn -T10 compile
+Apache Fory™ Kotlin provides support for Kotlin data class default values during deserialization. This feature enables forward/backward compatibility when data class schemas evolve.
+
+### How It Works
+
+When a Kotlin data class has parameters with default values, Fory can:
+
+1. **Detect default values** using Kotlin reflection
+2. **Apply default values** during deserialization when fields are missing from serialized data
+3. **Support schema evolution** by allowing new fields with defaults to be added without breaking existing serialized data
+
+### Example Usage
+
+```kotlin
+import org.apache.fory.Fory
+import org.apache.fory.config.CompatibleMode
+import org.apache.fory.serializer.kotlin.KotlinSerializers
+
+// Original data class
+data class User(val name: String, val age: Int)
+
+// Evolved data class with new field and default value
+data class UserV2(val name: String, val age: Int, val email: String = "default@example.com")
+
+fun main() {
+    val fory = Fory.builder()
+        .withCompatibleMode(CompatibleMode.COMPATIBLE)
+        .build()
+    KotlinSerializers.registerSerializers(fory)
+    fory.register(User::class.java)
+    fory.register(UserV2::class.java)
+
+    // Serialize with old schema
+    val oldUser = User("John", 30)
+    val serialized = fory.serialize(oldUser)
+
+    // Deserialize with new schema - missing field gets default value
+    val newUser = fory.deserialize(serialized) as UserV2
+    println(newUser) // UserV2(name=John, age=30, email=default@example.com)
+}
 ```
 
-## Code Format
+## Thread-Safe Usage
+
+For multi-threaded applications, use `ThreadSafeFory`:
+
+```kotlin
+import org.apache.fory.Fory
+import org.apache.fory.ThreadSafeFory
+import org.apache.fory.ThreadLocalFory
+import org.apache.fory.serializer.kotlin.KotlinSerializers
+
+object ForyHolder {
+    val fory: ThreadSafeFory = ThreadLocalFory { classLoader ->
+        Fory.builder()
+            .withClassLoader(classLoader)
+            .requireClassRegistration(true)
+            .build().also {
+                KotlinSerializers.registerSerializers(it)
+                it.register(Person::class.java)
+            }
+    }
+}
+
+// Use in multiple threads
+val bytes = ForyHolder.fory.serialize(person)
+val result = ForyHolder.fory.deserialize(bytes)
+```
+
+## Configuration
+
+Fory Kotlin is built on Fory Java, so all Java configuration options are available:
+
+```kotlin
+import org.apache.fory.Fory
+import org.apache.fory.config.CompatibleMode
+import org.apache.fory.serializer.kotlin.KotlinSerializers
+
+val fory = Fory.builder()
+    // Enable reference tracking for circular references
+    .withRefTracking(true)
+    // Enable schema evolution support
+    .withCompatibleMode(CompatibleMode.COMPATIBLE)
+    // Enable async compilation for better startup performance
+    .withAsyncCompilation(true)
+    // Compression options
+    .withIntCompressed(true)
+    .withLongCompressed(true)
+    .build()
+
+KotlinSerializers.registerSerializers(fory)
+```
+
+## Documentation
+
+| Resource          | Link                                               |
+| ----------------- | -------------------------------------------------- |
+| **Website**       | https://fory.apache.org/docs/guide/kotlin          |
+| **Source Docs**   | [docs/guide/kotlin](../docs/guide/kotlin/index.md) |
+| **Java Guide**    | [docs/guide/java](../docs/guide/java/index.md)     |
+| **API Reference** | [Fory Java API](../java/README.md)                 |
+
+## Installation
+
+### Maven
+
+```xml
+<dependency>
+  <groupId>org.apache.fory</groupId>
+  <artifactId>fory-kotlin</artifactId>
+  <version>0.16.0</version>
+</dependency>
+```
+
+### Gradle
+
+```kotlin
+implementation("org.apache.fory:fory-kotlin:0.16.0")
+```
+
+## Building
+
+Fory Kotlin requires Fory Java to be installed first:
 
 ```bash
-mvn -T10 spotless:apply
+# Install Fory Java
+cd ../java && mvn -T16 install -DskipTests
+
+# Build Fory Kotlin
+cd ../kotlin
+mvn clean package
 ```
 
 ## Testing
 
 ```bash
-mvn -T10 test
+mvn test
 ```
+
+## Code Format
+
+```bash
+mvn spotless:apply
+```
+
+## Additional Notes
+
+- **Fory Reuse**: Always reuse Fory instances; creation is expensive
+- **withDefault Collections**: Wrapper classes created from `withDefault` method are currently not supported
+
+## Contributing
+
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for development guidelines.
+
+## License
+
+Licensed under the [Apache License 2.0](../LICENSE).

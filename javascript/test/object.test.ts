@@ -17,8 +17,9 @@
  * under the License.
  */
 
-import Fury, { TypeInfo, InternalSerializerType, Type } from '../packages/fury/index';
+import Fory, { Type, TypeInfo } from '../packages/core/index';
 import { describe, expect, test } from '@jest/globals';
+import * as beautify from 'js-beautify';
 
 describe('object', () => {
   test('should descoration work', () => {
@@ -29,8 +30,8 @@ describe('object', () => {
       @Type.int32()
       a: number;
     }
-    const fury = new Fury({ refTracking: true });
-    const { serialize, deserialize } = fury.registerSerializer(Foo);
+    const fory = new Fory({ refTracking: true });
+    const { serialize, deserialize } = fory.registerSerializer(Foo);
     const foo = new Foo();
     foo.a = 123;
     const input = serialize(foo);
@@ -39,7 +40,7 @@ describe('object', () => {
     );
 
     expect(result instanceof Foo);
-    
+
     expect(result).toEqual({ a: 123 })
   });
 
@@ -49,13 +50,13 @@ describe('object', () => {
       @Type.int32()
       a: number;
     }
-    const fury = new Fury({ refTracking: true });
-    fury.registerSerializer(Foo);
+    const fory = new Fory({ refTracking: true });
+    fory.registerSerializer(Foo);
 
     const foo = new Foo();
     foo.a = 123;
-    const input = fury.serialize(foo)
-    const result = fury.deserialize(input);
+    const input = fory.serialize(foo)
+    const result = fory.deserialize(input);
     expect(result instanceof Foo);
     expect(result).toEqual({ a: 123 })
   });
@@ -66,8 +67,9 @@ describe('object', () => {
         b: Type.string()
       })
     })
-    const fury = new Fury({ refTracking: true });
-    const { serialize, deserialize } = fury.registerSerializer(typeInfo);
+
+    const fory = new Fory({ refTracking: true });
+    const { serialize, deserialize } = fory.registerSerializer(typeInfo);
     const input = serialize({ a: { b: "hel" } });
     const result = deserialize(
       input
@@ -80,10 +82,10 @@ describe('object', () => {
     const typeInfo = Type.struct("example.foo", {
       a: Type.struct("example.bar", {
         b: Type.string()
-      })
+      }).setNullable(true)
     })
-    const fury = new Fury({ refTracking: true });
-    const { serialize, deserialize } = fury.registerSerializer(typeInfo);
+    const fory = new Fory({ refTracking: true });
+    const { serialize, deserialize } = fory.registerSerializer(typeInfo);
     const input = serialize({ a: null });
     const result = deserialize(
       input
@@ -101,15 +103,15 @@ describe('object', () => {
         f: Type.binary(),
       }))
     })
-    
-    const fury = new Fury({ refTracking: true });
-    const serializer = fury.registerSerializer(typeInfo).serializer;
-    const input = fury.serialize({ a: [{ b: "hel", c: true, d: 123, e: 123, f: new Uint8Array([1,2,3]) }] }, serializer);
-    const result = fury.deserialize(
+
+    const fory = new Fory({ refTracking: true });
+    const serializer = fory.registerSerializer(typeInfo).serializer;
+    const input = fory.serialize({ a: [{ b: "hel", c: true, d: 123, e: 123, f: new Uint8Array([1, 2, 3]) }] }, serializer);
+    const result = fory.deserialize(
       input
     );
     result.a.forEach(x => x.e = Number(x.e))
-    expect(result).toEqual({ a: [{ b: "hel", c: true, d: 123, e: 123, f: Buffer.from([1,2,3]) }] })
+    expect(result).toEqual({ a: [{ b: "hel", c: true, d: 123, e: 123, f: new Uint8Array([1, 2, 3]) }] })
   });
 
   test('should write tag and read tag work', () => {
@@ -119,30 +121,37 @@ describe('object', () => {
       }),
       a2: Type.struct("example.bar")
     });
-    const fury = new Fury({ refTracking: true });
-    const serializer = fury.registerSerializer(typeInfo).serializer;
-    const input = fury.serialize({ a: { b: "hel" }, a2: { b: "hel2" } }, serializer);
-    const result = fury.deserialize(
+    const fory = new Fory({ refTracking: true });
+    const serializer = fory.registerSerializer(typeInfo).serializer;
+    const input = fory.serialize({ a: { b: "hel" }, a2: { b: "hel2" } }, serializer);
+    const result = fory.deserialize(
       input
     );
     expect(result).toEqual({ a: { b: "hel" }, a2: { b: "hel2" } })
   });
 
   test('should ciycle ref work', () => {
-    const typeInfo = Type.struct( "example.foo", {
+    const typeInfo = Type.struct("example.foo", {
       a: Type.struct("example.bar", {
         b: Type.string(),
       }),
-      a2: Type.struct("example.foo")
+      a2: Type.struct("example.foo").setTrackingRef(true)
     })
-    
-    const fury = new Fury({ refTracking: true });
-    const serialize = fury.registerSerializer(typeInfo).serializer;
+
+    const fory = new Fory({
+      refTracking: true, 
+      hooks: {
+        afterCodeGenerated: (code) => {
+          return beautify.js(code, { indent_size: 2, space_in_empty_paren: true, indent_empty_lines: true });
+        }
+      }
+    });
+    const serialize = fory.registerSerializer(typeInfo).serializer;
     const param: any = {};
     param.a = { b: "hel" };
     param.a2 = param;
-    const input = fury.serialize(param, serialize);
-    const result = fury.deserialize(
+    const input = fory.serialize(param, serialize);
+    const result = fory.deserialize(
       input
     );
     expect(result.a).toEqual({ b: "hel" })
@@ -158,9 +167,9 @@ describe('object', () => {
         }))
       }),
     })
-    
-    const fury = new Fury({ refTracking: true });
-    const { serialize, deserialize } = fury.registerSerializer(typeInfo);
+
+    const fory = new Fory({ refTracking: true });
+    const { serialize, deserialize } = fory.registerSerializer(typeInfo);
     const input = serialize({ "+a": { "delete": "hel", c: [{ d: "hello" }] } });
     const result = deserialize(
       input
@@ -178,9 +187,9 @@ describe('object', () => {
         }))
       }),
     })
-    
-    const fury = new Fury({ refTracking: true });
-    const { serialize, deserialize } = fury.registerSerializer(typeInfo);
+
+    const fory = new Fory({ refTracking: true });
+    const { serialize, deserialize } = fory.registerSerializer(typeInfo);
     const input = serialize({ a: { b: "hel", c: [{ d: "hello" }] } });
     const result = deserialize(
       input
@@ -191,30 +200,54 @@ describe('object', () => {
   test("should partial record work", () => {
     const hps = undefined;
     const typeInfo = Type.struct('ws-channel-protocol', {
-        kind: Type.string(),
-        path: Type.string(),
+      kind: Type.string(),
+      path: Type.string().setNullable(true),
     });
 
-    const fury = new Fury({ hps });
-    const { serialize, deserialize } = fury.registerSerializer(typeInfo);
+    const fory = new Fory({ hps });
+    const { serialize, deserialize } = fory.registerSerializer(typeInfo);
     const bin = serialize({
-        kind: "123",
+      kind: "123",
     });
     const obj = deserialize(bin);
-    expect({kind: "123", path: null}).toEqual(obj)
-})
+    expect({ kind: "123", path: null }).toEqual(obj)
+  })
 
   test('should handle emojis', () => {
     const typeInfo = Type.struct("example.emoji", {
       a: Type.string()
     });
-    
-    const fury = new Fury({ refTracking: true });
-    const { serialize, deserialize } = fury.registerSerializer(typeInfo);
+
+    const fory = new Fory({ refTracking: true });
+    const { serialize, deserialize } = fory.registerSerializer(typeInfo);
     const input = serialize({ a: "Hello, world! 🌍😊" });
     const result = deserialize(input);
     expect(result).toEqual({ a: "Hello, world! 🌍😊" });
   });
+
+  test('should support struct evolving override', () => {
+    const fory = new Fory({ compatible: true });
+    const evolvingType = Type.struct(
+      { typeId: 1001 },
+      {
+        f1: Type.string(),
+      }
+    );
+    const fixedType = Type.struct(
+      { typeId: 1002, evolving: false },
+      {
+        f1: Type.string(),
+      }
+    );
+
+    const evolvingSerializer = fory.registerSerializer(evolvingType);
+    const fixedSerializer = fory.registerSerializer(fixedType);
+
+    const evolvingPayload = evolvingSerializer.serialize({ f1: "payload" }) as Buffer;
+    const fixedPayload = fixedSerializer.serialize({ f1: "payload" }) as Buffer;
+
+    expect(fixedPayload.length).toBeLessThan(evolvingPayload.length);
+    expect(evolvingSerializer.deserialize(evolvingPayload)).toEqual({ f1: "payload" });
+    expect(fixedSerializer.deserialize(fixedPayload)).toEqual({ f1: "payload" });
+  });
 });
-
-

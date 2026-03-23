@@ -27,8 +27,12 @@ module.exports = {
     "**/*.ts",
     "!**/dist/**",
     "!**/build/**",
-    "!packages/fury/lib/murmurHash3.ts"
+    "!packages/core/lib/murmurHash3.ts"
   ],
+  testPathIgnorePatterns : (
+    !process.env["DATA_FILE"] ? ["test/crossLanguage.test.ts"] : []
+  ).concat([
+  ]),
   transform: {
     '\\.ts$': ['ts-jest', {
       tsconfig: {
